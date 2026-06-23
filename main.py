@@ -1,0 +1,111 @@
+import os
+from dotenv import load_dotenv
+from google import genai
+import argparse
+#sys stores the command line arguments
+import sys
+from google.genai import types
+from call_function import (available_functions,schema_get_files_info,schema_get_file_content,schema_write_file,schema_run_python_file,call_function)
+from functions.get_files_info import get_files_info
+from functions.get_file_content import get_file_content
+from functions.run_python_file import run_python_file
+from functions.write_file import write_file
+from cache import Cache
+
+
+def main():
+    #load the API key from .env file
+    load_dotenv()
+    api_key=os.environ.get("GEMINI_API_KEY") 
+
+    #create a client and generate a response from a user input prompt
+    client=genai.Client(api_key=api_key)
+    system_prompt = r"""You are an expert autonomous AI software engineer operating within a local development environment. 
+Your primary goal is to fulfill the user's request accurately, safely, and with maximum efficiency.
+
+### CORE DIRECTIVES
+1. THINK BEFORE YOU ACT: Before calling any function, you must output a 'Thought:' explaining your reasoning and which tool you will use.
+2. BE FRUGAL: Every tool call is expensive. Minimize the number of steps.
+3. AVOID LOOPS: If a tool returns an error, do not retry the exact same action. Change your approach. 
+4. DO NOT ASSUME: Never assume the contents of a file without reading it first via get_file_content.
+5. STAY IN SCOPE: Only interact with files relevant to the user's immediate request.
+
+### TOOL USAGE CONSTRAINTS
+- get_files_info: Use this FIRST to understand the directory structure.
+- get_file_content: Use this to read the source code.
+- run_python_file: Use this to execute code. Always read the code before running it.
+- write_file: Use this only when you have a complete solution.
+
+If the user asks to modify a file:
+
+1. Read it.
+2. Produce complete replacement.
+3. Write it.
+4. Run tests if appropriate.
+
+### WORKFLOW
+For every interaction, follow this exact sequence:
+1. Brief Plan: What do I need to do next?
+2. Action: [Call the appropriate tool, or provide the final answer]
+3. Observation: [Wait for the tool result]"""
+    
+
+    parser=argparse.ArgumentParser(description="Chatbot")
+    #parser accepts one command line argument and stores it in the parser args
+    parser.add_argument("user_prompt",type=str,help="User Prompt")
+    #verbose argument added
+    parser.add_argument("--verbose",action="store_true",help="Enable verbose output")
+
+    #this reads what the user has typed
+    args=parser.parse_args()
+    #this contains the actual command line argument prompt typed by the user
+    prompt=args.user_prompt
+    #creates a list of messages for chat history
+    #user role, parts is only one type text and is stored as a content obj
+    messages = [types.Content(role="user",parts=[types.Part(text=args.user_prompt)])]
+    max_iters=20
+    cache=Cache()
+    #load data from disk into cache so that cached items remain even if system is shut down
+    cache.load_disk("cache.json")
+    for x in range(max_iters):
+        response = client.models.generate_content(model="gemini-2.5-flash",contents=messages,config=types.GenerateContentConfig(tools=[available_functions],system_instruction=system_prompt))
+        
+        if response is None:
+            print("Invalid Response")
+            raise RuntimeError
+        if args.verbose==True:
+            print(f"User prompt: {args.user_prompt}")
+            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+        
+        
+        
+        if response.candidates:
+            for candidate in response.candidates:
+                if candidate is None or candidate.content is None:
+                    continue
+                
+                messages.append(candidate.content)
+               
+        if response.function_calls:
+            for function_call in response.function_calls:
+                
+                result=call_function(function_call,args.verbose,cache)
+                
+                messages.append(result)
+                cache.save_disk("cache.json")
+        # if response.text is not None:
+        #     print(response.text)
+        #     cache.save_disk("cache.json")
+        #     return
+            
+        else:
+            #final message after iters
+            # print(response.text)
+            # print(response.function_calls)
+            # print(response.candidates)
+            # print(response.candidates[0].content.parts)
+            print(response.text)
+            return
+
+main()

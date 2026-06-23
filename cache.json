@@ -1,0 +1,6 @@
+{
+    "get_file_content:{\"file_path\": \"lorem.txt\"}": {
+        "value": "wait, this isn't lorem ipsum",
+        "ttl": 1782064086.5840893
+    }
+}
