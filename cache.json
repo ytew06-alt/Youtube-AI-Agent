@@ -1,6 +1,10 @@
 {
-    "get_file_content:{\"file_path\": \"lorem.txt\"}": {
-        "value": "wait, this isn't lorem ipsum",
-        "ttl": 1782064086.5840893
+    "get_file_content:{\"file_path\": \"pkg/calculator.py\"}": {
+        "value": "# calculator/pkg/calculator.py\n\nclass GPACalculator:\n    def calculate_gpa(self, courses: list[dict]) -> float:\n        total_points = 0.0\n        total_credits = 0.0\n        grade_to_points = {\n            \"A\": 4.0, \"A-\": 3.7,\n            \"B+\": 3.3, \"B\": 3.0, \"B-\": 2.7,\n            \"C+\": 2.3, \"C\": 2.0, \"C-\": 1.7,\n            \"D+\": 1.3, \"D\": 1.0,\n            \"F\": 0.0\n        }\n\n        for course in courses:\n            grade = course.get(\"grade\", \"\").upper()\n            credits = course.get(\"credits\", 0)\n\n            if grade in grade_to_points and credits > 0:\n                total_points += grade_to_points[grade] * credits\n                total_credits += credits\n            else:\n                raise ValueError(f\"Invalid grade or credits for course: {course}\")\n\n        if total_credits == 0:\n            return 0.0  # Avoid division by zero if no valid courses\n\n        return total_points / total_credits\n",
+        "ttl": 1782477529.686287
+    },
+    "get_file_content:{\"file_path\": \"main.py\"}": {
+        "value": "# calculator/main.py\n\nimport sys\nimport json\nfrom pkg.calculator import GPACalculator\n\ndef main() -> None:\n    gpa_calculator = GPACalculator()\n    \n    if len(sys.argv) <= 1:\n        print(\"GPA Calculator App\")\n        print('Usage: python main.py \"[{\"grade\": \"A\", \"credits\": 3}, {\"grade\": \"B+\", \"credits\": 4}]\"')\n        print('Example: python main.py \"[{\\\"grade\\\": \\\"A\\\", \\\"credits\\\": 3}, {\\\"grade\\\": \\\"B+\\\", \\\"credits\\\": 4}]\"')\n        return\n\n    try:\n        # Assuming the input is a JSON string representing a list of course dictionaries\n        courses_str = \" \".join(sys.argv[1:])\n        courses = json.loads(courses_str)\n        \n        if not isinstance(courses, list):\n            raise ValueError(\"Input must be a JSON list of courses.\")\n\n        gpa = gpa_calculator.calculate_gpa(courses)\n        print(f\"Calculated GPA: {gpa:.2f}\")\n\n    except json.JSONDecodeError:\n        print(\"Error: Invalid JSON input. Please provide a valid JSON string for courses.\")\n    except ValueError as e:\n        print(f\"Error: {e}\")\n    except Exception as e:\n        print(f\"An unexpected error occurred: {e}\")\n\n\nif __name__ == \"__main__\":\n    main()\n",
+        "ttl": 1782477534.0313935
     }
 }
