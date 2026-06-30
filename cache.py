@@ -76,6 +76,15 @@ class Cache:
             return
         with open(file_name,"r") as f:
             self.cache=json.load(f)
+    #to invalidate inspect project call after write file call
+    def invalidate_prefix(self,prefix):
+        to_remove=[]
+        for key in self.cache:
+            if key.startswith(prefix):
+                to_remove.append(key)
+        for key in to_remove:
+            del self.cache[key]
+
 
     
     

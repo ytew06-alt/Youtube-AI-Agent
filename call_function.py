@@ -5,6 +5,7 @@ from functions.get_files_info import get_files_info
 from functions.get_file_content import get_file_content
 from functions.write_file import write_file
 from functions.run_python_file import run_python_file
+from functions.inspect_project import inspect_project
 from cache import Cache
 import json
  
@@ -93,8 +94,23 @@ schema_run_python_file = types.FunctionDeclaration(
     ),
 )
 
+schema_inspect_project=types.FunctionDeclaration(
+    name="inspect_project",
+    description="Provides the details of the project by returning directory,structure and contents of small .py and .md files",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "max_file_size": types.Schema(
+                type=types.Type.INTEGER,
+                description="max file size in bytes to include"
+            )
+        }
+    )
+    
+)
+
 available_functions = types.Tool(
-    function_declarations=[schema_get_files_info ,schema_get_file_content,schema_write_file,schema_run_python_file]
+    function_declarations=[schema_get_files_info ,schema_get_file_content,schema_write_file,schema_run_python_file,schema_inspect_project]
 )
 
 
@@ -105,7 +121,7 @@ def call_function(function_call: types.FunctionCall, verbose: bool = False,cache
     #if exsits return the cached result instead of calling the function again and print that we are using the cached result if verbose is true
     if cache is not None:
         cache.clean_expired()
-    if function_call.name == "get_file_content" or function_call.name == "get_files_info":
+    if function_call.name == "get_file_content" or function_call.name == "get_files_info" or function_call.name=="inspect_project":
         key=generate_key(function_call.name,function_call.args)
         if cache is not None:
             cached=cache.get(key)
@@ -133,7 +149,8 @@ def call_function(function_call: types.FunctionCall, verbose: bool = False,cache
     "get_file_content": get_file_content,
     "write_file":write_file,
     "run_python_file":run_python_file,
-    "get_files_info":get_files_info
+    "get_files_info":get_files_info,
+    "inspect_project": inspect_project
     }
     func = function_map.get(function_call.name)
 
@@ -151,13 +168,14 @@ def call_function(function_call: types.FunctionCall, verbose: bool = False,cache
     #** passes a dictionary and calculator is the workinf dir
     result=func("./calculator",**args)
 
-    if cache is not None and (function_call.name=="get_file_content" or function_call.name=="get_files_info"):
+    if cache is not None and (function_call.name=="get_file_content" or function_call.name=="get_files_info" or function_call.name=="inspect_project"):
         key=generate_key(function_call.name,function_call.args)
         if not result.startswith("Error:"):
             cache.set(key,result,ttl)
         #if u read a file and store content and write that file anf then read it again so we wud get stale data from cache
     if cache is not None and function_call.name=="write_file":
         cache.invalid_multiple_keys(args["file_path"])
+        cache.invalidate_prefix("inspect_project:")
     #packages string result from functions output into a types.content obj
     return types.Content(
     role="tool",
