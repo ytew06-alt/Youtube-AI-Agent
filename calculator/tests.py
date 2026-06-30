@@ -1,48 +1,63 @@
-# calculator/tests.py
-
 import unittest
-from pkg.calculator import Calculator
+from pkg.calculator import GPACalculator
 
 
-class TestCalculator(unittest.TestCase):
+class TestGPACalculator(unittest.TestCase):
     def setUp(self) -> None:
-        self.calculator = Calculator()
+        self.gpa_calculator = GPACalculator()
 
-    def test_addition(self) -> None:
-        result = self.calculator.evaluate("3 + 5")
-        self.assertEqual(result, 8)
+    def test_basic_gpa_calculation(self) -> None:
+        courses = [
+            {"name": "Math", "grade": "A", "credits": 3},
+            {"name": "Science", "grade": "B", "credits": 4},
+            {"name": "English", "grade": "C", "credits": 3},
+        ]
+        expected_gpa = (4.0 * 3 + 3.0 * 4 + 2.0 * 3) / (3 + 4 + 3)
+        self.assertAlmostEqual(self.gpa_calculator.calculate_gpa(courses), expected_gpa, places=2)
 
-    def test_subtraction(self) -> None:
-        result = self.calculator.evaluate("10 - 4")
-        self.assertEqual(result, 6)
+    def test_gpa_with_various_grades(self) -> None:
+        courses = [
+            {"name": "History", "grade": "A-", "credits": 3},
+            {"name": "Art", "grade": "B+", "credits": 2},
+            {"name": "PE", "grade": "D", "credits": 1},
+        ]
+        expected_gpa = (3.7 * 3 + 3.3 * 2 + 1.0 * 1) / (3 + 2 + 1)
+        self.assertAlmostEqual(self.gpa_calculator.calculate_gpa(courses), expected_gpa, places=2)
 
-    def test_multiplication(self) -> None:
-        result = self.calculator.evaluate("3 * 4")
-        self.assertEqual(result, 12)
+    def test_gpa_with_zero_credits(self) -> None:
+        courses = [
+            {"name": "Math", "grade": "A", "credits": 0},
+            {"name": "Science", "grade": "B", "credits": 4},
+        ]
+        # Courses with zero credits should be ignored, so GPA is based only on Science
+        expected_gpa = 3.0
+        self.assertAlmostEqual(self.gpa_calculator.calculate_gpa(courses), expected_gpa, places=2)
 
-    def test_division(self) -> None:
-        result = self.calculator.evaluate("10 / 2")
-        self.assertEqual(result, 5)
+    def test_empty_courses_list(self) -> None:
+        courses = []
+        self.assertEqual(self.gpa_calculator.calculate_gpa(courses), 0.0)
 
-    def test_nested_expression(self) -> None:
-        result = self.calculator.evaluate("3 * 4 + 5")
-        self.assertEqual(result, 17)
-
-    def test_complex_expression(self) -> None:
-        result = self.calculator.evaluate("2 * 3 - 8 / 2 + 5")
-        self.assertEqual(result, 7)
-
-    def test_empty_expression(self) -> None:
-        result = self.calculator.evaluate("")
-        self.assertIsNone(result)
-
-    def test_invalid_operator(self) -> None:
+    def test_invalid_grade_raises_error(self) -> None:
+        courses = [
+            {"name": "Math", "grade": "X", "credits": 3},
+        ]
         with self.assertRaises(ValueError):
-            self.calculator.evaluate("$ 3 5")
+            self.gpa_calculator.calculate_gpa(courses)
 
-    def test_not_enough_operands(self) -> None:
+    def test_invalid_credits_raises_error(self) -> None:
+        courses = [
+            {"name": "Science", "grade": "A", "credits": -1},
+        ]
         with self.assertRaises(ValueError):
-            self.calculator.evaluate("+ 3")
+            self.gpa_calculator.calculate_gpa(courses)
+            
+    def test_case_insensitivity_of_grades(self) -> None:
+        courses = [
+            {"name": "Math", "grade": "a", "credits": 3},
+            {"name": "Science", "grade": "b+", "credits": 4},
+        ]
+        expected_gpa = (4.0 * 3 + 3.3 * 4) / (3 + 4)
+        self.assertAlmostEqual(self.gpa_calculator.calculate_gpa(courses), expected_gpa, places=2)
 
 
 if __name__ == "__main__":

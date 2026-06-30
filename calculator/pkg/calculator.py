@@ -1,5 +1,3 @@
-# calculator/pkg/calculator.py
-
 class GPACalculator:
     def calculate_gpa(self, courses: list[dict]) -> float:
         total_points = 0.0
@@ -15,12 +13,18 @@ class GPACalculator:
         for course in courses:
             grade = course.get("grade", "").upper()
             credits = course.get("credits", 0)
+            
+            if credits == 0:
+                continue  # Skip courses with 0 credits
 
-            if grade in grade_to_points and credits > 0:
-                total_points += grade_to_points[grade] * credits
-                total_credits += credits
-            else:
-                raise ValueError(f"Invalid grade or credits for course: {course}")
+            if grade not in grade_to_points:
+                raise ValueError(f"Invalid grade for course: {course.get('name', 'N/A')}")
+            
+            if credits < 0: 
+                raise ValueError(f"Invalid credits for course: {course.get('name', 'N/A')}")
+
+            total_points += grade_to_points[grade] * credits
+            total_credits += credits
 
         if total_credits == 0:
             return 0.0  # Avoid division by zero if no valid courses

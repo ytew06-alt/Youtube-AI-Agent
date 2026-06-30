@@ -16,6 +16,8 @@ import json
 from summarise_messages import summarise_messages
 import time
 from google.genai import errors
+from concurrent.futures import ThreadPoolExecutor
+
 def print_history_debug(messages_list, stage_name="DEBUG"):
     """Helper to visualize the current state of the agent's memory."""
     print(f"\n=== {stage_name} (Length: {len(messages_list)}) ===")
@@ -113,12 +115,28 @@ Before using tools, briefly explain your plan."""
                 messages.append(candidate.content)
                
         if response.function_calls:
+            #multithreading tool calls for concurrency
+            is_parallel=True
             for function_call in response.function_calls:
-                
-                result=call_function(function_call,args.verbose,cache)
-                
-                messages.append(result)
-                cache.save_disk("cache.json")
+                if function_call.name!="get_file_content" and function_call.name !="get_files_info":
+                    is_parallel=False
+                    break
+            if is_parallel:    
+                with ThreadPoolExecutor() as executor:
+                    #future stores the future object, if not generated yet it waits else it returns the result
+                    futures=[]
+                    for function_call in response.function_calls:
+                        
+                        futures.append(executor.submit(call_function,function_call,args.verbose,cache))
+                    for future in futures:
+                        result=future.result()
+                        print(f"USING MULTITHREADING!!!!")
+                        messages.append(result)
+            else:
+                for function_call in response.function_calls:
+                    result=call_function(function_call,args.verbose,cache)
+                    messages.append(result)
+            cache.save_disk("cache.json")
         # if response.text is not None:
         #     print(response.text)
         #     cache.save_disk("cache.json")
