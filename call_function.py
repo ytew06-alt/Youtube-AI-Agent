@@ -115,7 +115,7 @@ available_functions = types.Tool(
 
 
 #the types.functionCall object has a name and args property
-def call_function(function_call: types.FunctionCall, verbose: bool = False,cache:Cache=None, ttl: int=3600) -> types.Content:
+def call_function(function_call: types.FunctionCall,working_directory, verbose: bool = False,cache:Cache=None, ttl: int=3600) -> types.Content:
     #if function call is get_file_content or get_files_info, check if the result is already cached
     #generate a key based on the name and args and see if it exists alr in the cache 
     #if exsits return the cached result instead of calling the function again and print that we are using the cached result if verbose is true

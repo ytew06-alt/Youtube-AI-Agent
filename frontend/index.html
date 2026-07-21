@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+    
+        /* 1. The outer background box */
+        .agent-container {
+            display: flex; 
+            flex-direction: column; 
+            width: 50%; 
+            margin: 0 auto; 
+            background-color: rgba(34, 196, 196, 0.397); 
+            padding: 20px; 
+            height: 500px; 
+            border-radius: 12px;
+        }
+
+        /* 2. The Title */
+        .agent-title {
+            margin-top: 0;
+            font-family: sans-serif;
+        }
+
+        /* 3. The middle white box */
+        .chat-window {
+            flex: 1; 
+            background-color: white; 
+            padding: 15px; 
+            margin-bottom: 15px; 
+            overflow-y: auto;
+            border-radius: 8px; 
+            box-shadow: 0px 4px 4px rgba(0,0,0,0.1); 
+            border: 1px solid #ddd;
+        }
+
+        /* 4. The text inside the middle box */
+        .chat-text {
+            font-family: sans-serif;
+        }
+
+        /* 5. The bottom input wrapper */
+        .input-area {
+            position: relative;
+            margin-top: auto;
+            
+            font-family: sans-serif;
+            font-weight: bold;
+        }
+
+        /* 6. The actual input field */
+        .prompt-input {
+            width: 100%; 
+            min-height:50px;
+            border-radius: 5px; 
+            box-sizing: border-box; 
+            padding: 10px; 
+            padding-right: 60px;
+            display: block; 
+            resize:none;
+            overflow:hidden;
+            background-color: white; 
+            border-radius: 8px; 
+            box-shadow: 4px 4px 4px black; 
+            border: 1px solid #ddd;
+
+            
+        }
+
+        #send-button{
+            position:absolute;
+            right: 15px;
+            bottom:10px;
+            height: 30px;
+            width: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size:18px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="agent-container">
+        
+        <h1 class="agent-title"> AI AGENT </h1>
+        
+        <div class="chat-window">
+            <p class="chat-text">Agent: System initialized. Ready to code.</p>
+        </div>
+
+        <div class="input-area">
+            <textarea id="prompt-box" rows="1" type="text" placeholder="Type your prompt here..." class="prompt-input"></textarea>
+            <button id="send-button">↑</button>
+        </div>
+        
+    </div>
+
+    <!-- <script>
+        const textarea = document.getElementById('prompt-box');
+
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto'; // Reset height
+            this.style.height = (this.scrollHeight) + 'px'; // Expand to fit text
+        });
+
+        function resizeTextarea() {
+            textarea.style.height = "auto";
+            textarea.style.height = textarea.scrollHeight + "px";
+        }
+
+        resizeTextarea();        // <-- add this
+
+        textarea.addEventListener("input", resizeTextarea);
+    
+    </script> -->
+
+    <script>
+    const textarea = document.getElementById('prompt-box');
+    const sendButton = document.getElementById('send-button');
+    const chatWindow = document.querySelector('.chat-window');
+
+    function addMessage(text, sender = 'Agent') {
+        const p = document.createElement('p');
+        p.className = 'chat-text';
+        p.textContent = `${sender}: ${text}`;
+        chatWindow.appendChild(p);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    function resizeTextarea() {
+        textarea.style.height = "auto";
+        textarea.style.height = textarea.scrollHeight + "px";
+    }
+
+    textarea.addEventListener('input', resizeTextarea);
+    resizeTextarea();
+
+    let socket = null;
+
+    function connectToBackend() {
+        socket = new WebSocket('ws://localhost:8000/chat');
+
+        socket.onopen = () => {
+            addMessage('Connected to agent backend.');
+            socket.send('./calculator'); // first message = working directory
+        };
+
+        socket.onmessage = (event) => {
+            const data = event.data;
+
+            if (data.startsWith('UPDATE:')) {
+                addMessage(data.replace('UPDATE:', ''), 'Agent');
+            } else if (data.startsWith('DONE:')) {
+                addMessage(data.replace('DONE:', ''), 'Agent');
+            } else {
+                addMessage(data, 'Agent');
+            }
+        };
+
+        socket.onerror = () => {
+            addMessage('Connection error. Make sure the backend is running.', 'System');
+        };
+
+        socket.onclose = () => {
+            addMessage('Disconnected from backend.', 'System');
+        };
+    }
+
+    sendButton.addEventListener('click', () => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            connectToBackend();
+        }
+
+        const prompt = textarea.value.trim();
+        if (!prompt) return;
+
+        addMessage(prompt, 'You');
+        socket.send(prompt);
+        textarea.value = '';
+        resizeTextarea();
+    });
+
+    connectToBackend();
+    </script>
+
+</body>
+</html>
