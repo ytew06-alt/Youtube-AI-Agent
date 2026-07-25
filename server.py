@@ -50,7 +50,7 @@ async def chat_endpoint(websocket: WebSocket, token: str= Query(None)):
                 asyncio.run_coroutine_threadsafe(websocket.send_text(f"UPDATE:{text}"),loop)
             #run agent and send back result, but dont let one bad reply kill the whole socket
             try:
-                reply=agent.chat(user_message,verbose=False,on_update=send_update)
+                reply=await loop.run_in_executor(None,agent.chat,user_message,False,send_update)
                 await websocket.send_text(f"DONE:{reply}")
             except Exception as e:
                 print(f"Chat error: {e}")
@@ -76,4 +76,4 @@ async def startup():
 
 #this mkaes it so only running directly works and cant be run using import server or something from elsewhere
 if __name__=="__main__":
-    uvicorn.run(app,host="localhost",port=8000)
+    uvicorn.run(app,host="127.0.0.1",port=8000)

@@ -1,63 +1,66 @@
 import unittest
-from pkg.calculator import GPACalculator
+from pkg.calculator import NBAPredictor
 
-
-class TestGPACalculator(unittest.TestCase):
+class TestNBAPredictor(unittest.TestCase):
     def setUp(self) -> None:
-        self.gpa_calculator = GPACalculator()
+        self.predictor = NBAPredictor()
 
-    def test_basic_gpa_calculation(self) -> None:
-        courses = [
-            {"name": "Math", "grade": "A", "credits": 3},
-            {"name": "Science", "grade": "B", "credits": 4},
-            {"name": "English", "grade": "C", "credits": 3},
-        ]
-        expected_gpa = (4.0 * 3 + 3.0 * 4 + 2.0 * 3) / (3 + 4 + 3)
-        self.assertAlmostEqual(self.gpa_calculator.calculate_gpa(courses), expected_gpa, places=2)
+    def test_predict_score_basic(self) -> None:
+        team1_name = "Lakers"
+        team1_strength = 90
+        team2_name = "Warriors"
+        team2_strength = 95
+        
+        predicted_scores = self.predictor.predict_score(team1_name, team1_strength, team2_name, team2_strength)
+        
+        self.assertIsInstance(predicted_scores, dict)
+        self.assertIn(team1_name, predicted_scores)
+        self.assertIn(team2_name, predicted_scores)
+        self.assertIsInstance(predicted_scores[team1_name], int)
+        self.assertIsInstance(predicted_scores[team2_name], int)
+        
+        # Check if scores are within a reasonable range (e.g., 80-140)
+        self.assertGreaterEqual(predicted_scores[team1_name], 80)
+        self.assertLessEqual(predicted_scores[team1_name], 140)
+        self.assertGreaterEqual(predicted_scores[team2_name], 80)
+        self.assertLessEqual(predicted_scores[team2_name], 140)
 
-    def test_gpa_with_various_grades(self) -> None:
-        courses = [
-            {"name": "History", "grade": "A-", "credits": 3},
-            {"name": "Art", "grade": "B+", "credits": 2},
-            {"name": "PE", "grade": "D", "credits": 1},
-        ]
-        expected_gpa = (3.7 * 3 + 3.3 * 2 + 1.0 * 1) / (3 + 2 + 1)
-        self.assertAlmostEqual(self.gpa_calculator.calculate_gpa(courses), expected_gpa, places=2)
+    def test_predict_score_equal_strength(self) -> None:
+        team1_name = "Celtics"
+        team1_strength = 90
+        team2_name = "Heat"
+        team2_strength = 90
+        
+        predicted_scores = self.predictor.predict_score(team1_name, team1_strength, team2_name, team2_strength)
+        
+        self.assertIsInstance(predicted_scores, dict)
+        self.assertIn(team1_name, predicted_scores)
+        self.assertIn(team2_name, predicted_scores)
 
-    def test_gpa_with_zero_credits(self) -> None:
-        courses = [
-            {"name": "Math", "grade": "A", "credits": 0},
-            {"name": "Science", "grade": "B", "credits": 4},
-        ]
-        # Courses with zero credits should be ignored, so GPA is based only on Science
-        expected_gpa = 3.0
-        self.assertAlmostEqual(self.gpa_calculator.calculate_gpa(courses), expected_gpa, places=2)
-
-    def test_empty_courses_list(self) -> None:
-        courses = []
-        self.assertEqual(self.gpa_calculator.calculate_gpa(courses), 0.0)
-
-    def test_invalid_grade_raises_error(self) -> None:
-        courses = [
-            {"name": "Math", "grade": "X", "credits": 3},
-        ]
+    def test_predict_score_one_much_stronger(self) -> None:
+        team1_name = "Bulls"
+        team1_strength = 75
+        team2_name = "Knicks"
+        team2_strength = 100
+        
+        predicted_scores = self.predictor.predict_score(team1_name, team1_strength, team2_name, team2_strength)
+        
+        self.assertIsInstance(predicted_scores, dict)
+        self.assertIn(team1_name, predicted_scores)
+        self.assertIn(team2_name, predicted_scores)
+        
+    def test_invalid_strength_raises_error(self) -> None:
         with self.assertRaises(ValueError):
-            self.gpa_calculator.calculate_gpa(courses)
-
-    def test_invalid_credits_raises_error(self) -> None:
-        courses = [
-            {"name": "Science", "grade": "A", "credits": -1},
-        ]
+            self.predictor.predict_score("TeamA", -10, "TeamB", 90)
+        
         with self.assertRaises(ValueError):
-            self.gpa_calculator.calculate_gpa(courses)
+            self.predictor.predict_score("TeamA", 90, "TeamB", -5)
             
-    def test_case_insensitivity_of_grades(self) -> None:
-        courses = [
-            {"name": "Math", "grade": "a", "credits": 3},
-            {"name": "Science", "grade": "b+", "credits": 4},
-        ]
-        expected_gpa = (4.0 * 3 + 3.3 * 4) / (3 + 4)
-        self.assertAlmostEqual(self.gpa_calculator.calculate_gpa(courses), expected_gpa, places=2)
+        with self.assertRaises(ValueError):
+            self.predictor.predict_score("TeamA", "invalid", "TeamB", 90) # type: ignore
+            
+        with self.assertRaises(ValueError):
+            self.predictor.predict_score("TeamA", 90, "TeamB", "invalid") # type: ignore
 
 
 if __name__ == "__main__":

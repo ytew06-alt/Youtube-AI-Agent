@@ -58,12 +58,18 @@ class Agent:
         
     
     def chat(self,prompt:str,verbose: bool,on_update=None) ->str :
+        checkpoint=len(self.messages)
+        if prompt.strip().lower() == "/clear":
+            self.messages = [] # Empty the memory
+            if os.path.exists("history.json"):
+                os.remove("history.json") # Delete the saved file
+            return "Conversation history cleared. Ready for a new task!"
         self.verbose=verbose
         self.messages.append(types.Content(role="user",parts=[types.Part(text=prompt)]))
         try:
             for i in range(self.max_iters):
                 
-                response=self._call_model()
+                response=self._call_model(on_update)
                 self._print_verbose(response)
                 if response.candidates:
                     for candidate in response.candidates:
@@ -89,20 +95,27 @@ class Agent:
                     return response.text
             return "Max iterations reached"
         except Exception:
-            del self.messages[len(self.messages):]
+            del self.messages[checkpoint:]
             raise
 
             
 
 
-    def _call_model(self):
-        while True:
+    def _call_model(self,on_update=None):
+        max_retries=4
+        for attempt in range(max_retries):
+
+
+   
             try:
                 response = self.client.models.generate_content(model="gemini-2.5-flash",contents=self.messages,config=types.GenerateContentConfig(tools=[available_functions],system_instruction=self.system_prompt))
                 break
             except errors.APIError as e:
-                if e.code==429 or "RESOURCE_EXHAUSTED" in str(e):
-                    print("Rate limit exceeded. Pausing for 60 seconds to cool down...")
+                if (e.code==429 or "RESOURCE_EXHAUSTED" in str(e) or e.code==503 or "UNAVAILABLE" in str(e)) and attempt< max_retries-1:
+                    msg=(f"Rate limited (attempt {attempt+1}). Pausing for 60 seconds to cool down...")
+                    print(msg)
+                    if on_update:
+                        on_update(msg)
                     time.sleep(60)
                 else:
                     raise e
