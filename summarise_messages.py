@@ -9,6 +9,8 @@ def summarise_messages(client,messages):
         else:
             role=message.role.upper()
         #text ofr current message being processed
+        if message.parts is None:
+            continue
         message_text=""
         for part in message.parts:
             #if part is a tool call, or not text, we skip it
@@ -28,5 +30,6 @@ def summarise_messages(client,messages):
     f"History:\n{cumulative_text}\n\n")
 
     response=client.models.generate_content(model="gemini-2.5-flash",contents=summary)
-
+    if response.text is None:
+        return "Summary unavailable for this segment."
     return response.text.strip()

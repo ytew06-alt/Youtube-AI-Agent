@@ -1,32 +1,28 @@
-class GPACalculator:
-    def calculate_gpa(self, courses: list[dict]) -> float:
-        total_points = 0.0
-        total_credits = 0.0
-        grade_to_points = {
-            "A": 4.0, "A-": 3.7,
-            "B+": 3.3, "B": 3.0, "B-": 2.7,
-            "C+": 2.3, "C": 2.0, "C-": 1.7,
-            "D+": 1.3, "D": 1.0,
-            "F": 0.0
+import random
+
+class NBAPredictor:
+    def predict_score(self, team1_name: str, team1_strength: int, team2_name: str, team2_strength: int) -> dict:
+        if not isinstance(team1_strength, int) or not isinstance(team2_strength, int) or team1_strength < 0 or team2_strength < 0:
+            raise ValueError("Team strengths must be non-negative integers.")
+
+        # Base scores in a realistic NBA range
+        base_score_team1 = 100
+        base_score_team2 = 100
+
+        # Adjust base scores based on relative strength
+        # A smaller multiplier for strength to keep scores realistic
+        # Difference in strength matters more than absolute strength
+        strength_difference = team1_strength - team2_strength
+        
+        # Apply a smaller, more nuanced adjustment for strength
+        score_team1 = base_score_team1 + (strength_difference * 0.5) + random.randint(-15, 15)
+        score_team2 = base_score_team2 - (strength_difference * 0.5) + random.randint(-15, 15)
+        
+        # Ensure scores are within a plausible NBA range (e.g., 80-140)
+        score_team1 = int(max(80, min(140, score_team1)))
+        score_team2 = int(max(80, min(140, score_team2)))
+
+        return {
+            team1_name: score_team1,
+            team2_name: score_team2
         }
-
-        for course in courses:
-            grade = course.get("grade", "").upper()
-            credits = course.get("credits", 0)
-            
-            if credits == 0:
-                continue  # Skip courses with 0 credits
-
-            if grade not in grade_to_points:
-                raise ValueError(f"Invalid grade for course: {course.get('name', 'N/A')}")
-            
-            if credits < 0: 
-                raise ValueError(f"Invalid credits for course: {course.get('name', 'N/A')}")
-
-            total_points += grade_to_points[grade] * credits
-            total_credits += credits
-
-        if total_credits == 0:
-            return 0.0  # Avoid division by zero if no valid courses
-
-        return total_points / total_credits

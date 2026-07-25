@@ -40,7 +40,7 @@ def print_history_debug(messages_list, stage_name="DEBUG"):
     print("=" * (10 + len(stage_name)) + "\n")
 
 class Agent:
-    def __init__(self,working_directory):
+    def __init__(self,working_directory,api_key):
         self.working_directory=working_directory
         self.messages=[]
         self.max_iters=20
@@ -50,8 +50,7 @@ class Agent:
         self._load_history()
         self._load_cache()
         #load the API key from .env file
-        load_dotenv()
-        api_key=os.environ.get("GEMINI_API_KEY") 
+        
 
         #create a client and generate a response from a user input prompt
         self.client=genai.Client(api_key=api_key)
@@ -61,30 +60,38 @@ class Agent:
     def chat(self,prompt:str,verbose: bool,on_update=None) ->str :
         self.verbose=verbose
         self.messages.append(types.Content(role="user",parts=[types.Part(text=prompt)]))
-        for i in range(self.max_iters):
-            
-            response=self._call_model()
-            self._print_verbose(response)
-            if response.candidates:
-                for candidate in response.candidates:
-                    if candidate is None or candidate.content is None:
-                        continue
-                    
-                    self.messages.append(candidate.content)
+        try:
+            for i in range(self.max_iters):
                 
-            if response.function_calls:
-                #tells the extension whihc tools are called 
-                #allows to print each tool call like Calling get_file_content... in the http connection
-                for call in response.function_calls:
-                    if on_update:
-                        on_update(f"Calling tool: {call.name}...")
-                self._tool_calls(response.function_calls)
-                continue
-            else:
-                self._compress_history()
-                self._save_history()
-                return response.text
-        return "Max iterations reached"
+                response=self._call_model()
+                self._print_verbose(response)
+                if response.candidates:
+                    for candidate in response.candidates:
+                        if candidate is None or candidate.content is None:
+                            continue
+                        
+                        self.messages.append(candidate.content)
+                    
+                if response.function_calls:
+                    #tells the extension whihc tools are called 
+                    #allows to print each tool call like Calling get_file_content... in the http connection
+                    for call in response.function_calls:
+                        if on_update:
+                            on_update(f"Calling tool: {call.name}...")
+                    self._tool_calls(response.function_calls)
+                    continue
+                else:
+                    try:
+                        self._compress_history()
+                    except Exception as e:
+                        print(f"History compression failed, skipping...: {e}")
+                    self._save_history()
+                    return response.text
+            return "Max iterations reached"
+        except Exception:
+            del self.messages[len(self.messages):]
+            raise
+
             
 
 
