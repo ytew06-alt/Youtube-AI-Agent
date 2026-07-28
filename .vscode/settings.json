@@ -1,3 +1,4 @@
 {
-    "chat.disableAIFeatures": false
+    "chat.disableAIFeatures": false,
+    "python-envs.defaultEnvManager": "ms-python.python:system"
 }

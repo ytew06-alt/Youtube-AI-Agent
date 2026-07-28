@@ -4,6 +4,7 @@ import uvicorn
 import asyncio
 import json
 import traceback
+import re
 #The main thing this does is that norammly u wud write terminal command
 #That terminal command wud run python load history load cache load agemt and everything
 #using fastapi and websockets the connection opens and these things remain open for infinite requests
@@ -11,6 +12,7 @@ import traceback
 
 app=FastAPI()
 LOCAL_TOKEN="hidden_dev_token"
+MAX_PROMPT_LENGTH=4000
 
 #websocket endpoint
 @app.websocket("/chat")
@@ -44,6 +46,15 @@ async def chat_endpoint(websocket: WebSocket, token: str= Query(None)):
         #keep connection alive like persistent http
         while True:
             user_message= await websocket.receive_text()
+            #strip control chars and reject empty/oversized messages before they ever reach the agent
+            user_message=re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]','',user_message).strip()
+
+            if not user_message:
+                continue
+            if len(user_message) > MAX_PROMPT_LENGTH:
+                await websocket.send_text(f"DONE:Message too long ({len(user_message)}/{MAX_PROMPT_LENGTH} chars). Please shorten it.")
+                continue
+
             #necessary to have tool calls being shown since we need updates
             #trying to do this without asynchio results in errors
             def send_update(text: str):
@@ -54,25 +65,23 @@ async def chat_endpoint(websocket: WebSocket, token: str= Query(None)):
                 await websocket.send_text(f"DONE:{reply}")
             except Exception as e:
                 print(f"Chat error: {e}")
+                traceback.print_exc()
                 await websocket.send_text(f"DONE:Error - {str(e)}")
 
     except WebSocketDisconnect:
         print("Client Disconnected")
     except Exception as e:
         print(f"Unexpected Server Error: {e}")
+        traceback.print_exc()
         try:
             await websocket.send_text(f"Error:{str(e)}")
-        except Exception as e:
-            print(f"Chat error: {e}")
-            traceback.print_exc()
-            await websocket.send_text(f"DONE:Error - {str(e)}")
-
+        except Exception:
             pass
 
 #decorator that tells fastapi to run this function before the first server starts sort of like a contrsutctor
 @app.on_event("startup")
 async def startup():
-    print("Agent server running on ws://localhost:8000")
+    print("Agent server running on ws://127.0.0.1:8000")
 
 #this mkaes it so only running directly works and cant be run using import server or something from elsewhere
 if __name__=="__main__":

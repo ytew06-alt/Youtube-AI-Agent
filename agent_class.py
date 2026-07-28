@@ -103,12 +103,17 @@ class Agent:
 
     def _call_model(self,on_update=None):
         max_retries=4
+        token_info = self.client.models.count_tokens(
+        model="gemini-2.0-flash", 
+        contents=self.messages
+)
+        print(f"Total tokens about to be sent: {token_info.total_tokens}",flush=True)
         for attempt in range(max_retries):
 
 
    
             try:
-                response = self.client.models.generate_content(model="gemini-2.5-flash",contents=self.messages,config=types.GenerateContentConfig(tools=[available_functions],system_instruction=self.system_prompt))
+                response = self.client.models.generate_content(model="gemini-2.0-flash",contents=self.messages,config=types.GenerateContentConfig(tools=[available_functions],system_instruction=self.system_prompt))
                 break
             except errors.APIError as e:
                 if (e.code==429 or "RESOURCE_EXHAUSTED" in str(e) or e.code==503 or "UNAVAILABLE" in str(e)) and attempt< max_retries-1:

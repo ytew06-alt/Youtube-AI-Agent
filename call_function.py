@@ -6,6 +6,7 @@ from functions.get_file_content import get_file_content
 from functions.write_file import write_file
 from functions.run_python_file import run_python_file
 from functions.inspect_project import inspect_project
+from functions.extract_from_youtube import extract_code_from_video
 from cache import Cache
 import json
  
@@ -109,8 +110,21 @@ schema_inspect_project=types.FunctionDeclaration(
     
 )
 
+schema_extract_from_youtube = types.FunctionDeclaration(
+    name="extract_from_youtube",
+    description="Extracts and reconstructs code from a coding tutorial Youtube video by watching it directly.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "youtube_url" : types.Schema(type=types.Type.STRING, description="Public YouTube URL of the coding tutorial")
+
+        },
+        required=["youtube_url"]
+    )
+)
+
 available_functions = types.Tool(
-    function_declarations=[schema_get_files_info ,schema_get_file_content,schema_write_file,schema_run_python_file,schema_inspect_project]
+    function_declarations=[schema_get_files_info ,schema_get_file_content,schema_write_file,schema_run_python_file,schema_inspect_project,schema_extract_from_youtube]
 )
 
 
@@ -150,7 +164,8 @@ def call_function(function_call: types.FunctionCall,working_directory, verbose: 
     "write_file":write_file,
     "run_python_file":run_python_file,
     "get_files_info":get_files_info,
-    "inspect_project": inspect_project
+    "inspect_project": inspect_project,
+    "extract_from_youtube": extract_code_from_video
     }
     func = function_map.get(function_call.name)
 
@@ -166,7 +181,7 @@ def call_function(function_call: types.FunctionCall,working_directory, verbose: 
         )
     args = dict(function_call.args) if function_call.args else {}
     #** passes a dictionary and calculator is the workinf dir
-    result=func("./calculator",**args)
+    result=func(working_directory,**args)
 
     if cache is not None and (function_call.name=="get_file_content" or function_call.name=="get_files_info" or function_call.name=="inspect_project"):
         key=generate_key(function_call.name,function_call.args)
