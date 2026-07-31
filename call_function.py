@@ -116,10 +116,10 @@ schema_extract_from_youtube = types.FunctionDeclaration(
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "youtube_url" : types.Schema(type=types.Type.STRING, description="Public YouTube URL of the coding tutorial")
+            "url" : types.Schema(type=types.Type.STRING, description="Public YouTube URL of the coding tutorial")
 
         },
-        required=["youtube_url"]
+        required=["url"]
     )
 )
 
@@ -129,7 +129,7 @@ available_functions = types.Tool(
 
 
 #the types.functionCall object has a name and args property
-def call_function(function_call: types.FunctionCall,working_directory, verbose: bool = False,cache:Cache=None, ttl: int=3600) -> types.Content:
+def call_function(function_call: types.FunctionCall,working_directory, verbose: bool = False,cache:Cache=None, ttl: int=3600,client=None) -> types.Content:
     #if function call is get_file_content or get_files_info, check if the result is already cached
     #generate a key based on the name and args and see if it exists alr in the cache 
     #if exsits return the cached result instead of calling the function again and print that we are using the cached result if verbose is true
@@ -180,8 +180,12 @@ def call_function(function_call: types.FunctionCall,working_directory, verbose: 
         ],
         )
     args = dict(function_call.args) if function_call.args else {}
-    #** passes a dictionary and calculator is the workinf dir
-    result=func(working_directory,**args)
+    if function_call.name== "extract_from_youtube":
+        result=func(client=client,**args) if client else func(**args)
+    else:
+        
+        #** passes a dictionary and calculator is the workinf dir
+        result=func(working_directory,**args)
 
     if cache is not None and (function_call.name=="get_file_content" or function_call.name=="get_files_info" or function_call.name=="inspect_project"):
         key=generate_key(function_call.name,function_call.args)

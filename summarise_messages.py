@@ -1,4 +1,8 @@
 from google.genai import types
+from gemini_client import call_gemini_retry
+from models import SUMMARY_MODEL
+from gemini_client import call_with_fallback
+
 
 def summarise_messages(client,messages):
     cumulative_text=""
@@ -29,7 +33,7 @@ def summarise_messages(client,messages):
     "NO transcripts.\n\n"
     f"History:\n{cumulative_text}\n\n")
 
-    response=client.models.generate_content(model="gemini-2.5-flash",contents=summary)
+    response=call_with_fallback(client,model=SUMMARY_MODEL,contents=summary)
     if response.text is None:
         return "Summary unavailable for this segment."
     return response.text.strip()

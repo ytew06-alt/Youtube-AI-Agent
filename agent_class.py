@@ -1,5 +1,4 @@
 import os
-from dotenv import load_dotenv
 from google import genai
 import argparse
 #sys stores the command line arguments
@@ -17,6 +16,9 @@ from summarise_messages import summarise_messages
 import time
 from google.genai import errors
 from concurrent.futures import ThreadPoolExecutor
+from gemini_client import call_gemini_retry
+from models import AGENT_MODEL
+from gemini_client import call_with_fallback
 
 def print_history_debug(messages_list, stage_name="DEBUG"):
     """Helper to visualize the current state of the agent's memory."""
@@ -43,8 +45,11 @@ class Agent:
     def __init__(self,working_directory,api_key):
         self.working_directory=working_directory
         self.messages=[]
-        self.max_iters=20
+        self.max_iters=5
         self.system_prompt=self.init_system_prompt()
+        self.request_count=0
+        self.session_start=time.time()
+        self.last_prompt_tokens=0
 
         self.cache=Cache()
         self._load_history()
@@ -56,7 +61,18 @@ class Agent:
         self.client=genai.Client(api_key=api_key)
 
         
-    
+    def verify_thought_signature(self,content):
+        if not content.parts:
+            return content
+        for part in content.parts:
+            if part.function_call is not None:
+                if part.thought_signature:
+                    print(f"Signature is ok for {part.function_call.name} ({len(part.thought_signature)} bytes)")
+                else:
+                    print(f"WARNING: no signature for {part.function_call.name} — using fallback sentinel")
+                    part.thought_signature = b"skip_thought_signature_validator"
+                 # removed a break to allow for parallel tool calls
+        return content
     def chat(self,prompt:str,verbose: bool,on_update=None) ->str :
         checkpoint=len(self.messages)
         if prompt.strip().lower() == "/clear":
@@ -71,12 +87,15 @@ class Agent:
                 
                 response=self._call_model(on_update)
                 self._print_verbose(response)
+                
+                if response.usage_metadata:
+                    self.last_prompt_tokens=response.usage_metadata.prompt_token_count or 0
                 if response.candidates:
                     for candidate in response.candidates:
                         if candidate is None or candidate.content is None:
                             continue
-                        
-                        self.messages.append(candidate.content)
+
+                        self.messages.append(self.verify_thought_signature(candidate.content))
                     
                 if response.function_calls:
                     #tells the extension whihc tools are called 
@@ -97,39 +116,25 @@ class Agent:
         except Exception:
             del self.messages[checkpoint:]
             raise
-
+        
             
-
+        
 
     def _call_model(self,on_update=None):
-        max_retries=4
-        token_info = self.client.models.count_tokens(
-        model="gemini-2.0-flash", 
-        contents=self.messages
-)
-        print(f"Total tokens about to be sent: {token_info.total_tokens}",flush=True)
-        for attempt in range(max_retries):
-
-
-   
-            try:
-                response = self.client.models.generate_content(model="gemini-2.0-flash",contents=self.messages,config=types.GenerateContentConfig(tools=[available_functions],system_instruction=self.system_prompt))
-                break
-            except errors.APIError as e:
-                if (e.code==429 or "RESOURCE_EXHAUSTED" in str(e) or e.code==503 or "UNAVAILABLE" in str(e)) and attempt< max_retries-1:
-                    msg=(f"Rate limited (attempt {attempt+1}). Pausing for 60 seconds to cool down...")
-                    print(msg)
-                    if on_update:
-                        on_update(msg)
-                    time.sleep(60)
-                else:
-                    raise e
-
-        if response is None:
-            print("Invalid Response")
-            raise RuntimeError
-
-        return response
+            self.request_count += 1
+            elapsed = time.time() - self.session_start
+            print("\n" + "="*60)
+            print(f"GEMINI REQUEST #{self.request_count}")
+            print(f"Elapsed: {elapsed:.1f} seconds")
+            print(f"Requests/min so far: {self.request_count / max(elapsed/60, 1/60):.2f}")
+            print("="*60)
+            return call_with_fallback(
+                self.client,
+                on_update=on_update,
+                model=AGENT_MODEL,
+                contents=self.messages,
+                config=types.GenerateContentConfig(tools=[available_functions], system_instruction=self.system_prompt)
+            )
 
     def _tool_calls(self,function_calls):
         if function_calls:
@@ -152,18 +157,30 @@ class Agent:
                         self.messages.append(result)
             else:
                 for function_call in function_calls:
-                    result=call_function(function_call,self.working_directory,self.verbose,self.cache)
+                    result=call_function(function_call,self.working_directory,self.verbose,self.cache,client=self.client)
                     self.messages.append(result)
             self._save_cache()
 
+    def safe_compression(self,min_cut=0):
+        #never cuts mid turn so prevents cutting a function call from its function response
+        for i in range(min_cut,len(self.messages)):
+            msg=self.messages[i]
+            if msg.role=="user" and msg.parts and any(part.text for part in msg.parts):
+                return i
+        return min_cut
+    
     def _compress_history(self):
-        if len(self.messages)<10:
+        if self.last_prompt_tokens<100000:
             return
+            
+        
         
         # --- DEBUG 1: See the list before we chop it ---
         print_history_debug(self.messages, "BEFORE COMPRESSION")
-        summary=summarise_messages(self.client,self.messages[:8])
-        del self.messages[:8]
+
+        cut=self.safe_compression(8)
+        summary=summarise_messages(self.client,self.messages[:cut])
+        del self.messages[:cut]
         # create the bridge (Model role) to prevent API errors due to alternating roles protocol
         ack_msg = types.Content(
             role="model",
@@ -183,7 +200,7 @@ class Agent:
     def _save_history(self):
         message_list=[]
         for message in self.messages:
-            message_list.append(message.model_dump())
+            message_list.append(message.model_dump(mode="json"))
         with open("history.json","w") as f:
             json.dump(message_list,f,indent=4)
     
@@ -202,19 +219,181 @@ class Agent:
         
          
     def init_system_prompt(self)->str:
-        return r"""You are an autonomous AI software engineer working in a local development environment.
+        return r"""
+    You are an autonomous AI software engineer working in a local development environment.
+    
+Your objective is to solve the user's request accurately while minimising API usage, tool calls, and unnecessary reasoning loops.
+Current session reminders:
 
-        Rules:
-        - Minimize tool calls.
-        - Never assume file contents; read files before modifying or executing them.
-        - Only access files relevant to the user's request.
-        - If a tool fails, do not repeat the same call without a different approach.
-        - When modifying a file: read it, generate the complete replacement, write it, then test if appropriate.
-        - If multiple tool calls are independent, emit them together in a single response. Only separate tool calls when one depends on another.
-        Use inspect_project when you need an overview of an unfamiliar project or need to inspect multiple files.
+    - Every model request counts towards a strict request budget.
+    - Minimise the number of model turns.
+    - Batch all independent tool calls.
+    - Prefer one large batch of tool calls over many small batches.
+    - Avoid re-reading information already obtained.
+    
+=========================
+GENERAL BEHAVIOUR
+=========================
 
-        If the user asks about a specific file, use get_file_content instead.
-        Before using tools, briefly explain your plan."""
+- Think before acting.
+- Form a complete plan before using any tools.
+- Prefer solving problems with the information already available.
+- Do not make assumptions about file contents.
+- Never fabricate code or project structure.
+- Keep responses concise unless the user requests detailed explanations.
+
+=========================
+TOOL USAGE
+=========================
+
+Tools are expensive. Use them deliberately.
+
+Before calling any tool:
+
+1. Decide ALL the information you will need.
+2. Determine whether multiple tool calls can be executed independently.
+3. Emit every independent tool call together in a single response.
+
+Never request one file at a time if you already know you will need several.
+
+Good:
+
+get_file_content(main.py)
+get_file_content(utils.py)
+get_file_content(config.py)
+
+Bad:
+
+get_file_content(main.py)
+
+(wait)
+
+get_file_content(utils.py)
+
+(wait)
+
+get_file_content(config.py)
+
+If multiple file reads are independent, request them together.
+
+=========================
+PROJECT INSPECTION
+=========================
+
+When working in an unfamiliar project:
+
+- Prefer inspect_project first instead of repeatedly exploring directories.
+- Use inspect_project once to understand the project.
+- Afterwards only read the files that are actually relevant.
+
+Do not repeatedly inspect the project unless the project structure may have changed.
+
+=========================
+READING FILES
+=========================
+
+Only read files that are relevant to the user's request.
+
+Avoid reading:
+
+- generated files
+- unrelated modules
+- large files that are clearly unnecessary
+
+If several files are required to understand the problem, request all of them together.
+
+=========================
+WRITING FILES
+=========================
+
+Before writing:
+
+- Read the target file if its current contents are unknown.
+- Produce the complete updated file.
+- Write the file once.
+
+Avoid repeatedly rewriting the same file with small incremental edits.
+
+=========================
+RUNNING CODE
+=========================
+
+Only execute code when execution provides new information.
+
+Do not repeatedly rerun the same failing command unless something has changed.
+
+If execution fails:
+
+- Analyse the error.
+- Modify the code.
+- Run again only if necessary.
+
+=========================
+ERROR RECOVERY
+=========================
+
+If a tool fails:
+
+- Analyse why.
+- Choose a different strategy.
+- Do not repeat the exact same failing tool call.
+
+=========================
+MEMORY
+=========================
+
+Remember information returned by tools.
+
+Never reread a file that has already been read unless:
+
+- the file has been modified,
+- the user requests it,
+- or the previous information is insufficient.
+
+=========================
+EFFICIENCY
+=========================
+
+Your goal is to minimise model turns.
+
+Always try to gather all required information before asking for another round of tool calls.
+
+Prefer:
+
+One planning step
+→ Multiple independent tool calls
+→ One reasoning step
+
+instead of:
+
+Reason
+→ Tool
+→ Reason
+→ Tool
+→ Reason
+→ Tool
+
+=========================
+CODE QUALITY
+=========================
+
+Write clean, maintainable code.
+
+Prefer simple solutions over clever ones.
+
+Avoid introducing unnecessary abstractions.
+
+Preserve the existing project style whenever practical.
+
+=========================
+FINAL RESPONSES
+=========================
+
+Before answering:
+
+- Ensure the task is complete.
+- Mention any limitations.
+- Explain any assumptions you were forced to make."""
         
         
         

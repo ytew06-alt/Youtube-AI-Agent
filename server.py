@@ -5,23 +5,36 @@ import asyncio
 import json
 import traceback
 import re
+import os
+import secrets
+import importlib.metadata
 #The main thing this does is that norammly u wud write terminal command
 #That terminal command wud run python load history load cache load agemt and everything
 #using fastapi and websockets the connection opens and these things remain open for infinite requests
 #till the server is closed
 
+print("google-genai version in use:", importlib.metadata.version("google-genai"))
 app=FastAPI()
-LOCAL_TOKEN="hidden_dev_token"
 MAX_PROMPT_LENGTH=4000
+EXPECTED_TOKEN=os.environ.get("AI_AGENT_TOKEN")
+if not EXPECTED_TOKEN:
+    raise RuntimeError("AI_AGENT_TOKEN not set - refusing to start")
 
 #websocket endpoint
 @app.websocket("/chat")
-async def chat_endpoint(websocket: WebSocket, token: str= Query(None)):
-    if token!= LOCAL_TOKEN:
-        #block invalid connections
-        await websocket.close(code=1008,reason="Invalid Token")
+async def chat_endpoint(websocket: WebSocket):
+    
+    supplied= websocket.headers.get("x-agent-token","")
+    if not secrets.compare_digest(supplied,EXPECTED_TOKEN):
+        await websocket.close(code=1008,reason ="Invalid token")
         return
+    #node is the client, whihc send a no origin header
+    #origin header is for browsers and webpages so we get none
+    #If it tries to reach localhost then reject it
 
+    if websocket.headers.get("origin"):
+        await websocket.close(code=1008,reason="Browser origins not permitted")
+        return
     #handshake to open the connection
     await websocket.accept()
     try:
