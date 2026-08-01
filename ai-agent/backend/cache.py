@@ -1,32 +1,37 @@
 import json
 import os
 import time
+import threading
 class Cache:
     def __init__(self):
         self.cache={}
+        self.lock=threading.Lock()
 
     def get(self,key):
-        if not self.is_contains(key):
-            return None
-        if self.is_expired(key):
-            self.delete(key)
-            return None
-        return self.cache[key]["value"]
+        with self.lock:
+            if not self.is_contains(key):
+                return None
+            if self.is_expired(key):
+                self.delete(key)
+                return None
+            return self.cache[key]["value"]
 
     #set value and ttl fields for cache entry
     def set(self,key,value,ttl):
-        expiry=time.time()+ttl
-        self.cache[key]={"value":value,"ttl":expiry}
+        with self.lock:
+            expiry=time.time()+ttl
+            self.cache[key]={"value":value,"ttl":expiry}
 
     def is_contains(self,key):
         if key in self.cache:
             return True
         return False
     def delete(self,key):
-        if self.is_contains(key):
-            del self.cache[key]
-        else:
-            raise KeyError(f"Key '{key}' not found in cache.")
+        with self.lock():
+            if self.is_contains(key):
+                del self.cache[key]
+            else:
+                raise KeyError(f"Key '{key}' not found in cache.")
 
     def clear(self):
            self.cache.clear() 
@@ -74,8 +79,17 @@ class Cache:
     def load_disk(self,file_name):
         if not os.path.exists(file_name):
             return
-        with open(file_name,"r") as f:
-            self.cache=json.load(f)
+        try:
+            with open(file_name,"r") as f:
+                data=json.load(f)
+            if isinstance(data,dict):
+                self.cache=data
+
+        except (json.JSONDecodeError,OSError) as e:
+            print(f"Cache file unreadable, starting empty: {e}")
+            self.cache={}
+
+
     #to invalidate inspect project call after write file call
     def invalidate_prefix(self,prefix):
         to_remove=[]

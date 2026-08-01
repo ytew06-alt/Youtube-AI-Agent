@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from gemini_client import call_gemini_retry
 from models import AGENT_MODEL
 from gemini_client import call_with_fallback
+from config import workspace_key,state_path
 
 def print_history_debug(messages_list, stage_name="DEBUG"):
     """Helper to visualize the current state of the agent's memory."""
@@ -43,6 +44,8 @@ def print_history_debug(messages_list, stage_name="DEBUG"):
 
 class Agent:
     def __init__(self,working_directory,api_key):
+        self.ws_key=workspace_key(working_directory)
+
         self.working_directory=working_directory
         self.messages=[]
         self.max_iters=5
@@ -77,8 +80,9 @@ class Agent:
         checkpoint=len(self.messages)
         if prompt.strip().lower() == "/clear":
             self.messages = [] # Empty the memory
-            if os.path.exists("history.json"):
-                os.remove("history.json") # Delete the saved file
+            path=state_path("history.json",self.ws_key)
+            if os.path.exists(path):
+                os.remove(path) # Delete the saved file
             return "Conversation history cleared. Ready for a new task!"
         self.verbose=verbose
         self.messages.append(types.Content(role="user",parts=[types.Part(text=prompt)]))
@@ -191,8 +195,8 @@ class Agent:
         print_history_debug(self.messages, "AFTER COMPRESSION")
     
     def _load_history(self):
-        if os.path.exists("history.json"):
-            with open("history.json","r") as f:
+        if os.path.exists(state_path("history.json", self.ws_key)):
+            with open(state_path("history.json",self.ws_key),"r") as f:
                 messages_list=json.load(f)
                 for message in messages_list:
                     self.messages.append(types.Content.model_validate(message))
@@ -201,15 +205,15 @@ class Agent:
         message_list=[]
         for message in self.messages:
             message_list.append(message.model_dump(mode="json"))
-        with open("history.json","w") as f:
+        with open(state_path("history.json", self.ws_key), "r") as f:
             json.dump(message_list,f,indent=4)
     
     def _load_cache(self):
-        self.cache.load_disk("cache.json")
+        self.cache.load_disk(state_path("cache.json", self.ws_key))
 
 
     def _save_cache(self):
-        self.cache.save_disk("cache.json")
+        self.cache.save_disk(state_path("cache.json", self.ws_key))
 
     def _print_verbose(self,response):
         if self.verbose==True:

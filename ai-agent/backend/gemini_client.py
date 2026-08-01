@@ -15,6 +15,7 @@ import threading
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from config import state_path
 
 from google.genai import errors
 
@@ -54,7 +55,7 @@ class RateLimiter:
     """Spaces requests to stay inside RPM, and tracks RPD across restarts."""
 
     def __init__(self, usage_file=USAGE_FILE):
-        self.usage_file = usage_file
+        self.usage_file = usage_file or state_path(USAGE_FILE)
         self._lock = threading.Lock()
         self._recent = {}   # model -> deque of monotonic timestamps
         self._daily = self._load()

@@ -1,0 +1,58 @@
+{
+  "name": "ai-agent",
+  "displayName": "ai-agent",
+  "description": "AI coding assistant powered by a local Python agent",
+  "version": "0.0.1",
+  "publisher": "bilal-malik",
+  "repository": {"type": "git","url": "https://github.com/bilal-malik/ai-agent"},
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": ["onCommand:ai-agent.openChat", "onCommand:ai-agent.setApiKey"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ai-agent.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "ai-agent.openChat",
+        "title": "AI Agent: Open Chat"
+      },
+      {
+        "command": "ai-agent.setApiKey",
+        "title": "AI Agent: Set API Key"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "@types/vscode": "^1.90.0",
+    "@types/ws": "^8.18.1",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
+    "eslint": "^10.5.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
+  },
+  "overrides": {
+    "diff": "^8.0.4",
+    "serialize-javascript": "^7.0.6"
+  },
+  "dependencies": {
+    "ws": "^8.21.1"
+  }
+}
