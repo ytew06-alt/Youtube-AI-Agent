@@ -1,11 +1,11 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
 .env
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+out/
+*.vsix
+history.json
+cache.json
+gemini_usage.json
+.DS_Store
