@@ -84,6 +84,7 @@ export function startBackend(
         '--port', '0',
     ], {
         cwd: backendDir,
+        detached: true,
         env: {
             ...process.env,
             AI_AGENT_TOKEN: token,

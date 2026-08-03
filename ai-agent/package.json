@@ -3,8 +3,8 @@
   "displayName": "ai-agent",
   "description": "AI coding assistant powered by a local Python agent",
   "version": "0.0.1",
-  "publisher": "bilal-malik",
-  "repository": {"type": "git","url": "https://github.com/bilal-malik/ai-agent"},
+  "publisher": "ytew06-alt",
+  "repository": {"type": "git","url": "https://github.com/ytew06-alt/Youtube-AI-Agent"},
   "engines": {
     "vscode": "^1.125.0"
   },

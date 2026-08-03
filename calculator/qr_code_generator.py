@@ -1,10 +1,12 @@
 import qrcode
 
-data = input('Enter the text or URL: ').strip()
-filename = input('Enter the filename: ').strip()
+url = input("Enter the URL: ").strip()
+file_path = "qrcode.png"
 
-qr = qrcode.QRCode(box_size=10, border=4)
-qr.add_data(data)
-image = qr.make_image(fill_color='black', back_color='white')
-image.save(filename)
-print(f'QR code saved as {filename}')
+qr = qrcode.QRCode()
+qr.add_data(url)
+
+img = qr.make_image()
+img.save(file_path)
+
+print("QR Code was generated!")

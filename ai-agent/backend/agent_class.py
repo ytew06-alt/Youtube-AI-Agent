@@ -20,6 +20,8 @@ from gemini_client import call_gemini_retry
 from models import AGENT_MODEL
 from gemini_client import call_with_fallback
 from config import workspace_key,state_path
+from call_function import get_available_functions, call_function
+
 
 def print_history_debug(messages_list, stage_name="DEBUG"):
     """Helper to visualize the current state of the agent's memory."""
@@ -43,7 +45,7 @@ def print_history_debug(messages_list, stage_name="DEBUG"):
     print("=" * (10 + len(stage_name)) + "\n")
 
 class Agent:
-    def __init__(self,working_directory,api_key):
+    def __init__(self,working_directory,api_key,allow_execution=False):
         self.ws_key=workspace_key(working_directory)
 
         self.working_directory=working_directory
@@ -53,6 +55,9 @@ class Agent:
         self.request_count=0
         self.session_start=time.time()
         self.last_prompt_tokens=0
+        self.request_approval=None
+        self.allow_execution=allow_execution
+        self.tools=get_available_functions(allow_execution)
 
         self.cache=Cache()
         self._load_history()
@@ -76,7 +81,8 @@ class Agent:
                     part.thought_signature = b"skip_thought_signature_validator"
                  # removed a break to allow for parallel tool calls
         return content
-    def chat(self,prompt:str,verbose: bool,on_update=None) ->str :
+    def chat(self,prompt:str,verbose: bool,on_update=None,request_approval=None) ->str :
+        self.request_approval=request_approval
         checkpoint=len(self.messages)
         if prompt.strip().lower() == "/clear":
             self.messages = [] # Empty the memory
@@ -137,7 +143,7 @@ class Agent:
                 on_update=on_update,
                 model=AGENT_MODEL,
                 contents=self.messages,
-                config=types.GenerateContentConfig(tools=[available_functions], system_instruction=self.system_prompt)
+                config=types.GenerateContentConfig(tools=[self.tools], system_instruction=self.system_prompt)
             )
 
     def _tool_calls(self,function_calls):
@@ -161,7 +167,7 @@ class Agent:
                         self.messages.append(result)
             else:
                 for function_call in function_calls:
-                    result=call_function(function_call,self.working_directory,self.verbose,self.cache,client=self.client)
+                    result=call_function(function_call,self.working_directory,self.verbose,self.cache,client=self.client,allow_execution=self.allow_execution,request_approval=self.request_approval)
                     self.messages.append(result)
             self._save_cache()
 
@@ -205,7 +211,7 @@ class Agent:
         message_list=[]
         for message in self.messages:
             message_list.append(message.model_dump(mode="json"))
-        with open(state_path("history.json", self.ws_key), "r") as f:
+        with open(state_path("history.json", self.ws_key), "w") as f:
             json.dump(message_list,f,indent=4)
     
     def _load_cache(self):

@@ -123,13 +123,25 @@ schema_extract_from_youtube = types.FunctionDeclaration(
     )
 )
 
-available_functions = types.Tool(
-    function_declarations=[schema_get_files_info ,schema_get_file_content,schema_write_file,schema_run_python_file,schema_inspect_project,schema_extract_from_youtube]
-)
+
+def get_available_functions(allow_execution: bool = False) -> types.Tool:
+    declarations = [
+        schema_get_files_info,
+        schema_get_file_content,
+        schema_write_file,
+        schema_inspect_project,
+        schema_extract_from_youtube,
+    ]
+    if allow_execution:
+        declarations.append(schema_run_python_file)
+    return types.Tool(function_declarations=declarations)
+
+
+available_functions = get_available_functions(allow_execution=True)
 
 
 #the types.functionCall object has a name and args property
-def call_function(function_call: types.FunctionCall,working_directory, verbose: bool = False,cache:Cache=None, ttl: int=3600,client=None) -> types.Content:
+def call_function(function_call: types.FunctionCall,working_directory, verbose: bool = False,cache:Cache=None, ttl: int=3600,client=None,allow_execution=False,request_approval=None) -> types.Content:
     #if function call is get_file_content or get_files_info, check if the result is already cached
     #generate a key based on the name and args and see if it exists alr in the cache 
     #if exsits return the cached result instead of calling the function again and print that we are using the cached result if verbose is true
@@ -167,6 +179,20 @@ def call_function(function_call: types.FunctionCall,working_directory, verbose: 
     "inspect_project": inspect_project,
     "extract_from_youtube": extract_code_from_video
     }
+    if function_call.name == "run_python_file" and not allow_execution:
+        return types.Content(
+            role="tool",
+            parts=[
+                types.Part.from_function_response(
+                    name=function_call.name,
+                    response={"error": "Code execution is disabled. The user has not "
+                                       "granted permission to run files in this workspace."},
+                )
+            ],
+        )
+
+    if verbose:
+        print(f"Calling function: {function_call.name}({function_call.args})")
     func = function_map.get(function_call.name)
 
     if func is None:
@@ -182,6 +208,8 @@ def call_function(function_call: types.FunctionCall,working_directory, verbose: 
     args = dict(function_call.args) if function_call.args else {}
     if function_call.name== "extract_from_youtube":
         result=func(client=client,**args) if client else func(**args)
+    elif function_call.name=="write_file":
+        result=func(working_directory,request_approval=request_approval,**args)
     else:
         
         #** passes a dictionary and calculator is the workinf dir
@@ -195,6 +223,7 @@ def call_function(function_call: types.FunctionCall,working_directory, verbose: 
     if cache is not None and function_call.name=="write_file":
         cache.invalid_multiple_keys(args["file_path"])
         cache.invalidate_prefix("inspect_project:")
+        cache.invalidate_prefix("get_files_info:")
     #packages string result from functions output into a types.content obj
     return types.Content(
     role="tool",
