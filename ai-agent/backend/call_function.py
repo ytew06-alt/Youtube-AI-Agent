@@ -19,12 +19,13 @@ def generate_key(function_name: str, args:dict) ->str:
     #the prefix creates a unique tag for this for ease invalidation later when we write to a file and want to invalidate all cache entries related to that file path
     #if no file path in args then no prefix is added and we jsut generate the key based on function name and args as normal
     if "file_path" in args:
-        args["file_path"]=os.path.normpath(args["file_path"])
+        normalised_path=os.path.normpath(args["file_path"])
+        args={**args,"file_path": normalised_path}
         prefix=f"file_path:{args['file_path']}"
     else:
         prefix=""
     json_args=json.dumps(args,sort_keys=True)
-    return f"{function_name}:{json_args}"
+    return f"{prefix}{function_name}:{json_args}"
 
 
 schema_get_files_info = types.FunctionDeclaration(
@@ -141,7 +142,7 @@ available_functions = get_available_functions(allow_execution=True)
 
 
 #the types.functionCall object has a name and args property
-def call_function(function_call: types.FunctionCall,working_directory, verbose: bool = False,cache:Cache=None, ttl: int=3600,client=None,allow_execution=False,request_approval=None) -> types.Content:
+def call_function(function_call: types.FunctionCall,working_directory, verbose: bool = False,cache:Cache=None, ttl: int=3600,client=None,allow_execution=False,request_approval=None,on_update=None) -> types.Content:
     #if function call is get_file_content or get_files_info, check if the result is already cached
     #generate a key based on the name and args and see if it exists alr in the cache 
     #if exsits return the cached result instead of calling the function again and print that we are using the cached result if verbose is true
@@ -207,7 +208,7 @@ def call_function(function_call: types.FunctionCall,working_directory, verbose: 
         )
     args = dict(function_call.args) if function_call.args else {}
     if function_call.name== "extract_from_youtube":
-        result=func(client=client,**args) if client else func(**args)
+        result=func(client=client,**args,on_update=on_update) if client else func(**args)
     elif function_call.name=="write_file":
         result=func(working_directory,request_approval=request_approval,**args)
     else:

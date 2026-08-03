@@ -2,8 +2,24 @@ import yt_dlp
 from google.genai import types
 import time
 from gemini_client import call_gemini_retry
-from models import VIDEO_MODEL
 from gemini_client import call_with_fallback
+from models import VIDEO_MODEL
+import re
+
+
+def normalise_youtube_url(url:str) ->str:
+    "Remove timestamp paramter from link for gemini compatability"
+    patterns=[
+        r"youtu\.be/([0-9A-Za-z_-]{11})",
+        r"[?&]v=([0-9A-Za-z_-]{11})",
+
+    ]
+    for pattern in patterns:
+        match=re.search(pattern,url)
+        if match:
+            return f"https://www.youtube.com/watch?v={match.group(1)}"
+    raise ValueError(f"Could not extract a YouTube video ID from: {url}")
+
 
 def get_video_duration(url:str):
     #opens up the YoutubeDL tool, quiet prevents bunch og logging text
@@ -34,7 +50,7 @@ def get_chunks(duration:int):
     return chunks
 
 
-def process_chunk(client,url: str, start_sec: int, end_sec: int) -> str:
+def process_chunk(client,url: str, start_sec: int, end_sec: int,on_update=None) -> str:
     #use part instead of content since content packages multiple parts
     video_part = types.Part(
         file_data=types.FileData(file_uri=url),
@@ -51,8 +67,8 @@ Output ONLY the code you observe. If multiple files are shown, separate them wit
 Use narration audio to help confirm what's being typed when the visual is ambiguous.
 If a moment involves fast scrolling or typing where you are NOT confident in the exact text, mark that spot with "# UNCERTAIN: <brief note>" instead of guessing convincing-looking but possibly wrong code."""
     print("\n>>> GEMINI REQUEST (YouTube chunk)")
-    response = call_gemini_retry(
-        client,
+    response = call_with_fallback(
+        client, on_update=on_update,
         model=VIDEO_MODEL,
         contents=[video_part, types.Part(text=prompt)],
         config=types.GenerateContentConfig(
@@ -62,20 +78,21 @@ If a moment involves fast scrolling or typing where you are NOT confident in the
     return response.text
 
 
-def merge_chunks(client,code_chunks:list[str]):
+def merge_chunks(client,code_chunks:list[str],on_update=None):
     combined = "\n\n---CHUNK BOUNDARY---\n\n".join(code_chunks)
     prompt = f"""Below are code reconstructions from consecutive, slightly overlapping segments of the same coding tutorial video.
     Merge them into one final, clean, correct set of files. Remove duplicated code from the overlaps.
     Preserve any "# UNCERTAIN" markers so the user knows what to double check. {combined}"""
     print("\n>>> GEMINI REQUEST (YouTube chunk)")
     response = call_with_fallback(
-        client,
+        client,on_update=on_update,
         model=VIDEO_MODEL,
         contents=[types.Part(text=prompt)]
     )
     return response.text
 
 def extract_code_from_video(client,url:str,on_update=None):
+    url = normalise_youtube_url(url)
     duration=get_video_duration(url)
 
     chunks=get_chunks(duration) #list of tuples [(0,60),[55,115]] etc
@@ -88,12 +105,12 @@ def extract_code_from_video(client,url:str,on_update=None):
         if on_update:
             on_update(f"Processing chunk {i+1}/{len(chunks)}({start}s - {end}s)...")
         #essentially calls the gemini API and gets the extracted code
-        result=process_chunk(client,url,start,end)
+        result=process_chunk(client,url,start,end,on_update=on_update)
         code_chunks.append(result)
         if i<len(chunks) -1:
             #prevents exceedint tokens per minute restriction
             time.sleep(65) 
     if len(code_chunks)==1:
         return code_chunks[0]
-    return merge_chunks(client,code_chunks)
+    return merge_chunks(client,code_chunks,on_update=on_update)
 

@@ -50,7 +50,8 @@ class Agent:
 
         self.working_directory=working_directory
         self.messages=[]
-        self.max_iters=5
+        self.max_iters=10
+        self.on_update=None
         self.system_prompt=self.init_system_prompt()
         self.request_count=0
         self.session_start=time.time()
@@ -58,6 +59,7 @@ class Agent:
         self.request_approval=None
         self.allow_execution=allow_execution
         self.tools=get_available_functions(allow_execution)
+        
 
         self.cache=Cache()
         self._load_history()
@@ -167,7 +169,7 @@ class Agent:
                         self.messages.append(result)
             else:
                 for function_call in function_calls:
-                    result=call_function(function_call,self.working_directory,self.verbose,self.cache,client=self.client,allow_execution=self.allow_execution,request_approval=self.request_approval)
+                    result=call_function(function_call,self.working_directory,self.verbose,self.cache,client=self.client,allow_execution=self.allow_execution,request_approval=self.request_approval,on_update=self.on_update)
                     self.messages.append(result)
             self._save_cache()
 

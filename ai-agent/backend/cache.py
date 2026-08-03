@@ -38,8 +38,8 @@ class Cache:
     
     def invalid_multiple_keys(self, file_path):
         norm_file_path=os.path.normpath(file_path)
-        prefix=f"file_path:{norm_file_path}"
-        to_del=[]
+        prefix=f"file_path:{norm_file_path}|"
+        to_del=[key for key in self.cache if key.startswith(prefix)]
         for key in self.cache:
             if key.startswith(prefix):
                 to_del.append(key)
