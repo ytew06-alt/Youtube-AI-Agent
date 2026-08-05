@@ -21,6 +21,7 @@ from models import AGENT_MODEL
 from gemini_client import call_with_fallback
 from config import workspace_key,state_path
 from call_function import get_available_functions, call_function
+from config import CancelledByUser
 
 
 def print_history_debug(messages_list, stage_name="DEBUG"):
@@ -54,6 +55,7 @@ class Agent:
         self.on_update=None
         self.system_prompt=self.init_system_prompt()
         self.request_count=0
+        self.cancel_event=None
         self.session_start=time.time()
         self.last_prompt_tokens=0
         self.request_approval=None
@@ -83,8 +85,10 @@ class Agent:
                     part.thought_signature = b"skip_thought_signature_validator"
                  # removed a break to allow for parallel tool calls
         return content
-    def chat(self,prompt:str,verbose: bool,on_update=None,request_approval=None) ->str :
+    def chat(self,prompt:str,verbose: bool,on_update=None,request_approval=None,cancel_event=None) ->str :
         self.request_approval=request_approval
+        self.on_update=on_update
+        self.cancel_event=cancel_event
         checkpoint=len(self.messages)
         if prompt.strip().lower() == "/clear":
             self.messages = [] # Empty the memory
@@ -96,9 +100,19 @@ class Agent:
         self.messages.append(types.Content(role="user",parts=[types.Part(text=prompt)]))
         try:
             for i in range(self.max_iters):
+                if self.cancel_event is not None and self.cancel_event.is_set():
+                    raise CancelledByUser()
                 
                 response=self._call_model(on_update)
-                self._print_verbose(response)
+                try:
+                    self._print_verbose(response)
+                    usage=getattr(response,"usage_metadata",None)
+                    if usage is not None:
+                        self.last_prompt_tokens=usage.prompt_token_count or 0
+
+                except Exception as e:
+                    print(f"Usage accounting failed (ignoring): {e}")
+
                 
                 if response.usage_metadata:
                     self.last_prompt_tokens=response.usage_metadata.prompt_token_count or 0
@@ -116,6 +130,8 @@ class Agent:
                         if on_update:
                             on_update(f"Calling tool: {call.name}...")
                     self._tool_calls(response.function_calls)
+                    if self.cancel_event is not None and self.cancel_event.is_set():
+                        raise CancelledByUser()
                     continue
                 else:
                     try:
@@ -142,7 +158,7 @@ class Agent:
             print("="*60)
             return call_with_fallback(
                 self.client,
-                on_update=on_update,
+                on_update=on_update, cancel_event=self.cancel_event,
                 model=AGENT_MODEL,
                 contents=self.messages,
                 config=types.GenerateContentConfig(tools=[self.tools], system_instruction=self.system_prompt)
@@ -169,7 +185,7 @@ class Agent:
                         self.messages.append(result)
             else:
                 for function_call in function_calls:
-                    result=call_function(function_call,self.working_directory,self.verbose,self.cache,client=self.client,allow_execution=self.allow_execution,request_approval=self.request_approval,on_update=self.on_update)
+                    result=call_function(function_call,self.working_directory,self.verbose,self.cache,client=self.client,allow_execution=self.allow_execution,request_approval=self.request_approval,on_update=self.on_update,cancel_event=self.cancel_event)
                     self.messages.append(result)
             self._save_cache()
 
@@ -223,11 +239,15 @@ class Agent:
     def _save_cache(self):
         self.cache.save_disk(state_path("cache.json", self.ws_key))
 
-    def _print_verbose(self,response):
-        if self.verbose==True:
-            
-            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+    def _print_verbose(self, response):
+        if not self.verbose:
+            return
+        usage = getattr(response, "usage_metadata", None)
+        if usage is None:
+            print("No usage metadata on this response")
+            return
+        print(f"Prompt tokens: {usage.prompt_token_count}")
+        print(f"Response tokens: {usage.candidates_token_count}")
         
          
     def init_system_prompt(self)->str:

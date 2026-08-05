@@ -55,7 +55,6 @@ What decides whether people keep the extension installed.
 - **Cancel button** — there is currently no way to stop a running task, and with retries plus the fallback chain a stuck turn can hang for minutes.
 - **Diff before writing files** — the single biggest trust feature you can add. Nobody wants an agent silently overwriting their code.
 - **Surface remaining quota** — wire up `budget_report()`. Free-tier users will hit their daily limit on day one and assume the extension is broken.
-- **Onboarding note about rate limits** — explain the free-tier ceiling and point at Flash-Lite. Prevents most of your bad reviews.
 - **Stream responses** rather than waiting for a single `DONE:` message.
 - **Persist chat across panel close** — `getState` / `setState`.
 - **Fix the duplicated connection error** — the "Backend not running" `postMessage` sits outside the inner `if/else`, so it fires on every retry attempt.

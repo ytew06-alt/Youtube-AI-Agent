@@ -9,6 +9,7 @@ from functions.inspect_project import inspect_project
 from functions.extract_from_youtube import extract_code_from_video
 from cache import Cache
 import json
+from config import CancelledByUser
  
 def generate_key(function_name: str, args:dict) ->str:
     #generate a hashing key based on function name and args to store in the cache itself
@@ -142,7 +143,7 @@ available_functions = get_available_functions(allow_execution=True)
 
 
 #the types.functionCall object has a name and args property
-def call_function(function_call: types.FunctionCall,working_directory, verbose: bool = False,cache:Cache=None, ttl: int=3600,client=None,allow_execution=False,request_approval=None,on_update=None) -> types.Content:
+def call_function(function_call: types.FunctionCall,working_directory, verbose: bool = False,cache:Cache=None, ttl: int=3600,client=None,allow_execution=False,request_approval=None,on_update=None,cancel_event=None) -> types.Content:
     #if function call is get_file_content or get_files_info, check if the result is already cached
     #generate a key based on the name and args and see if it exists alr in the cache 
     #if exsits return the cached result instead of calling the function again and print that we are using the cached result if verbose is true
@@ -208,7 +209,7 @@ def call_function(function_call: types.FunctionCall,working_directory, verbose: 
         )
     args = dict(function_call.args) if function_call.args else {}
     if function_call.name== "extract_from_youtube":
-        result=func(client=client,**args,on_update=on_update) if client else func(**args)
+        result=func(client=client,**args,on_update=on_update,cancel_event=cancel_event) if client else func(**args)
     elif function_call.name=="write_file":
         result=func(working_directory,request_approval=request_approval,**args)
     else:

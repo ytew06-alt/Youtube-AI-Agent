@@ -5,6 +5,7 @@ from gemini_client import call_gemini_retry
 from gemini_client import call_with_fallback
 from models import VIDEO_MODEL
 import re
+from config import CancelledByUser
 
 
 def normalise_youtube_url(url:str) ->str:
@@ -50,7 +51,7 @@ def get_chunks(duration:int):
     return chunks
 
 
-def process_chunk(client,url: str, start_sec: int, end_sec: int,on_update=None) -> str:
+def process_chunk(client,url: str, start_sec: int, end_sec: int,on_update=None,cancel_event=None) -> str:
     #use part instead of content since content packages multiple parts
     video_part = types.Part(
         file_data=types.FileData(file_uri=url),
@@ -68,7 +69,7 @@ Use narration audio to help confirm what's being typed when the visual is ambigu
 If a moment involves fast scrolling or typing where you are NOT confident in the exact text, mark that spot with "# UNCERTAIN: <brief note>" instead of guessing convincing-looking but possibly wrong code."""
     print("\n>>> GEMINI REQUEST (YouTube chunk)")
     response = call_with_fallback(
-        client, on_update=on_update,
+        client, on_update=on_update, cancel_event=cancel_event,
         model=VIDEO_MODEL,
         contents=[video_part, types.Part(text=prompt)],
         config=types.GenerateContentConfig(
@@ -78,20 +79,20 @@ If a moment involves fast scrolling or typing where you are NOT confident in the
     return response.text
 
 
-def merge_chunks(client,code_chunks:list[str],on_update=None):
+def merge_chunks(client,code_chunks:list[str],on_update=None, cancel_event=None):
     combined = "\n\n---CHUNK BOUNDARY---\n\n".join(code_chunks)
     prompt = f"""Below are code reconstructions from consecutive, slightly overlapping segments of the same coding tutorial video.
     Merge them into one final, clean, correct set of files. Remove duplicated code from the overlaps.
     Preserve any "# UNCERTAIN" markers so the user knows what to double check. {combined}"""
     print("\n>>> GEMINI REQUEST (YouTube chunk)")
     response = call_with_fallback(
-        client,on_update=on_update,
+        client,on_update=on_update,cancel_event=cancel_event,
         model=VIDEO_MODEL,
         contents=[types.Part(text=prompt)]
     )
     return response.text
 
-def extract_code_from_video(client,url:str,on_update=None):
+def extract_code_from_video(client,url:str,on_update=None,cancel_event=None):
     url = normalise_youtube_url(url)
     duration=get_video_duration(url)
 
@@ -100,6 +101,8 @@ def extract_code_from_video(client,url:str,on_update=None):
 
     for i in range(len(chunks)):
         start,end=chunks[i]
+        if cancel_event is not None and cancel_event.is_set():
+            raise CancelledByUser()
   
         #gives real time updates if needed
         if on_update:
@@ -112,5 +115,10 @@ def extract_code_from_video(client,url:str,on_update=None):
             time.sleep(65) 
     if len(code_chunks)==1:
         return code_chunks[0]
-    return merge_chunks(client,code_chunks,on_update=on_update)
+    return merge_chunks(client,code_chunks,on_update=on_update,cancel_event=cancel_event)
 
+def wait_or_cancel(seconds, cancel_event):
+    for i in range(seconds):
+        if cancel_event is not None and cancel_event.is_set():
+            raise CancelledByUser()
+        time.sleep(1)

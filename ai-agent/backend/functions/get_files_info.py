@@ -24,7 +24,7 @@ def get_files_info(working_directory: str, directory: str = ".") -> str:
             content_path=os.path.join(target_dir,content)
             is_dir=os.path.isdir(content_path)
             size=os.path.getsize(content_path)
-            info_message+=f"- {content}: file_size={size} bytes, is_dir={is_dir}"
+            info_message+=f"- {content}: file_size={size} bytes, is_dir={is_dir}\n"
         return info_message
     except:
         err_message=f"Error: {Exception}"

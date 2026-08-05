@@ -27,6 +27,8 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from agent_class import Agent
+import threading
+from config import CancelledByUser
 
 MAX_PROMPT_LENGTH = 4000
 APPROVAL_TIMEOUT = 300          # seconds a pending approval waits before denying
@@ -99,7 +101,7 @@ async def chat_endpoint(websocket: WebSocket):
 
         loop = asyncio.get_running_loop()
         prompts: asyncio.Queue = asyncio.Queue()
-
+        cancel_event=threading.Event()
         async def reader():
             """The ONLY coroutine that reads the socket after handshake."""
             try:
@@ -117,6 +119,8 @@ async def chat_endpoint(websocket: WebSocket):
                             fut.set_result(bool(msg.get("approved")))
                     elif kind == "prompt":
                         await prompts.put(msg.get("text", ""))
+                    elif kind =="cancel":
+                        cancel_event.set()
             except (WebSocketDisconnect, RuntimeError):
                 pass
             except asyncio.CancelledError:
@@ -169,6 +173,7 @@ async def chat_endpoint(websocket: WebSocket):
             user_message = await prompts.get()
             if user_message is None:        # reader signalled disconnect
                 break
+            cancel_event.clear()
 
             user_message = re.sub(
                 r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', user_message
@@ -186,9 +191,11 @@ async def chat_endpoint(websocket: WebSocket):
             try:
                 reply = await loop.run_in_executor(
                     None, agent.chat,
-                    user_message, False, send_update, request_approval
+                    user_message, False, send_update, request_approval,cancel_event
                 )
                 await websocket.send_text(f"DONE:{reply}")
+            except CancelledByUser:
+                await websocket.send_text("DONE:Cancelled.")
             except Exception as e:
                 print(f"Chat error: {e}")
                 traceback.print_exc()

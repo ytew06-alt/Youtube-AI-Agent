@@ -16,10 +16,6 @@
   "contributes": {
     "commands": [
       {
-        "command": "ai-agent.helloWorld",
-        "title": "Hello World"
-      },
-      {
         "command": "ai-agent.openChat",
         "title": "AI Agent: Open Chat"
       },

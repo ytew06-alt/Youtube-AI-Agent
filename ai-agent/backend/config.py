@@ -33,3 +33,7 @@ def workspace_key(working_dir):
     #normalised to deal with capitals, and abs path so project and home/bilal/project for eg is the hashed the same
     normalised_path=os.path.normcase(os.path.abspath(working_dir))
     return hashlib.sha256(normalised_path.encode()).hexdigest()[:16]
+
+class CancelledByUser(Exception):
+    """Raised when a user cancel a running process, clean stop not an error"""
+    pass

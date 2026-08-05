@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from config import state_path
 
 from google.genai import errors
+from config import CancelledByUser
 
 from models import (
     DEFAULT_LIMITS,
@@ -90,7 +91,7 @@ class RateLimiter:
             used = self._daily["counts"].get(model, 0)
             return max(0, limits["rpd"] - RPD_SAFETY_MARGIN - used)
 
-    def acquire(self, model, on_update=None):
+    def acquire(self, model, on_update=None,cancel_event=None):
         """Block until it is safe to send. Raises QuotaExhausted if RPD is spent."""
         limits = MODEL_LIMITS.get(model, DEFAULT_LIMITS)
         min_interval = 60.0 / limits["rpm"]
@@ -136,6 +137,7 @@ class RateLimiter:
             if on_update:
                 on_update(msg)
             time.sleep(wait)
+            _sleep_or_cancel(wait,cancel_event)
 
     def refund(self, model):
         """Undo a reservation when the request was rejected without doing work.
@@ -209,7 +211,7 @@ def classify(e):
 # ---------------------------------------------------------------------------
 # Single-model call with retries
 # ---------------------------------------------------------------------------
-def call_gemini_retry(client, max_retries=3, on_update=None, **kwargs):
+def call_gemini_retry(client, max_retries=3, on_update=None,cancel_event=None,**kwargs):
     """generate_content against ONE model, with pacing and backoff.
 
     Prefer call_with_fallback() in application code.
@@ -217,6 +219,8 @@ def call_gemini_retry(client, max_retries=3, on_update=None, **kwargs):
     model = kwargs.get("model") or "unknown"
 
     for attempt in range(max_retries):
+        if cancel_event is not None and cancel_event.is_set():
+            raise CancelledByUser()
         _limiter.acquire(model, on_update=on_update)
         try:
             return client.models.generate_content(**kwargs)
@@ -249,7 +253,7 @@ def call_gemini_retry(client, max_retries=3, on_update=None, **kwargs):
             print(msg)
             if on_update:
                 on_update(msg)
-            time.sleep(wait)
+            _sleep_or_cancel(wait,cancel_event)
 
     raise RuntimeError("Max retries exceeded")
 
@@ -272,7 +276,7 @@ def strip_thought_signatures(contents):
     return contents
 
 
-def call_with_fallback(client, on_update=None, **kwargs):
+def call_with_fallback(client, on_update=None, cancel_event=None, **kwargs):
     """Try the requested model, degrading through FALLBACK_CHAIN on 503/quota.
 
     Does NOT fall back on 'fatal' errors (400 bad request, 404 unknown model,
@@ -294,7 +298,7 @@ def call_with_fallback(client, on_update=None, **kwargs):
             kwargs["contents"] = strip_thought_signatures(kwargs.get("contents"))
 
         try:
-            return call_gemini_retry(client, on_update=on_update, **kwargs)
+            return call_gemini_retry(client, on_update=on_update,cancel_event=cancel_event, **kwargs)
 
         except QuotaExhausted as e:
             last_err = e
@@ -309,6 +313,18 @@ def call_with_fallback(client, on_update=None, **kwargs):
 
     kwargs["model"] = primary  # don't leave the caller's dict mutated
     raise last_err
+
+def _sleep_or_cancel(seconds,cancel_event):
+    #constantly checks for a cancel event every second
+    end=time.time() + seconds
+    while True:
+        remaining = end - time.time()
+        if remaining<=0:
+            return
+
+        if cancel_event is not None and cancel_event.is_set():
+            raise CancelledByUser()
+        time.sleep(min(1,remaining))
 
 
 def budget_report():
