@@ -29,6 +29,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from agent_class import Agent
 import threading
 from config import CancelledByUser
+from gemini_client import budget_report
 
 MAX_PROMPT_LENGTH = 4000
 APPROVAL_TIMEOUT = 300          # seconds a pending approval waits before denying
@@ -194,6 +195,10 @@ async def chat_endpoint(websocket: WebSocket):
                     user_message, False, send_update, request_approval,cancel_event
                 )
                 await websocket.send_text(f"DONE:{reply}")
+                try:
+                    await websocket.send_text("QUOTA:" + budget_report().replace("\n"," | "))
+                except Exception:
+                    pass
             except CancelledByUser:
                 await websocket.send_text("DONE:Cancelled.")
             except Exception as e:
