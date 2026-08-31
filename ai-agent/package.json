@@ -1,17 +1,19 @@
 {
-  "name": "ai-agent",
-  "displayName": "ai-agent",
-  "description": "AI coding assistant powered by a local Python agent",
-  "version": "0.0.1",
-  "publisher": "ytew06-alt",
+  "name": "redclip-ai",
+  "displayName": "RedClip AI",
+  "description": "An AI coding agent that can securely extract code from Youtube videos directly into the VS code workspace.",
+  "version": "0.0.2",
+  "publisher": "bilal-malik",
   "repository": {"type": "git","url": "https://github.com/ytew06-alt/Youtube-AI-Agent"},
   "engines": {
-    "vscode": "^1.125.0"
+    "vscode": "^1.90.0"
   },
   "categories": [
-    "Other"
+    "Machine Learning",
+    "Snippets"
   ],
-  "activationEvents": ["onCommand:ai-agent.openChat", "onCommand:ai-agent.setApiKey"],
+  "icon": "media/logo.png",
+  "activationEvents": ["onCommand:ai-agent.openChat", "onCommand:ai-agent.setApiKey","onView:aiAgent.chatView"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -22,8 +24,102 @@
       {
         "command": "ai-agent.setApiKey",
         "title": "AI Agent: Set API Key"
+      },
+      {
+        "command": "ai-agent.openWalkthrough", "title": "AI Agent: Show Getting Started"
+      },
+      { "command": "ai-agent.copyUvInstallCommand", "title": "AI Agent: Copy uv Install Command" 
+      }
+      
+    ]
+    ,
+    "viewsContainers": {
+      "activitybar":[
+        {
+          "id": "ai-agent-sidebar",
+          "title": "AI Agent",
+          "icon":"media/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ai-agent-sidebar": [
+        {
+          "icon":"media/activity-icon.svg",
+          "id": "aiAgent.chatView",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "walkthroughs": [
+  {
+    "id": "aiAgent.gettingStarted",
+    "title": "Get Started with RedClip AI",
+    "description": "Turn YouTube tutorials into working code, or chat with an agent that can read, write, and run files in your workspace.",
+    "steps": [
+      {
+        "id": "installUv",
+        "title": "Install uv",
+        "description": "RedClip AI's backend runs on Python, managed by `uv`. Install it once, then restart VS Code.\n[Copy install command](command:ai-agent.copyUvInstallCommand)\n[Open install guide](https://docs.astral.sh/uv/getting-started/installation/)",
+        "media": {
+          "svg": "media/walkthrough-uv.svg",
+          "altText": "Terminal icon"
+        },
+        "completionEvents": [
+          "onCommand:ai-agent.copyUvInstallCommand"
+        ]
+      },
+      {
+        "id": "setApiKey",
+        "title": "Add your Gemini API key",
+        "description": "Get a free key from Google AI Studio, then paste it in.\n[Get an API key](https://aistudio.google.com/apikey)\n[Set API Key](command:ai-agent.setApiKey)",
+        "media": {
+          "svg": "media/walkthrough-key.svg",
+          "altText": "Key icon"
+        },
+        "completionEvents": [
+          "onCommand:ai-agent.setApiKey"
+        ]
+      },
+      {
+        "id": "openFolder",
+        "title": "Open a project folder",
+        "description": "RedClip AI works inside a workspace, so it knows what files it can read, write, and run.\n[Open Folder](command:vscode.openFolder)",
+        "media": {
+          "svg": "media/walkthrough-folder.svg",
+          "altText": "Folder icon"
+        },
+        "completionEvents": [
+          "onCommand:vscode.openFolder"
+        ]
+      },
+      {
+        "id": "openChat",
+        "title": "Start chatting",
+        "description": "Paste a YouTube tutorial link to extract its code, or describe what you want built.\n[Open Chat](command:ai-agent.openChat)",
+        "media": {
+          "svg": "media/walkthrough-chat.svg",
+          "altText": "Chat icon"
+        },
+        "completionEvents": [
+          "onCommand:ai-agent.openChat"
+        ]
       }
     ]
+  }
+],
+  "configuration":{
+    "title": "RedClip AI",
+    "properties":{
+        "aiAgent.model":{
+          "type": "string",
+          "default": "gemini-3.1-flash-lite",
+          "enum": ["gemini-3.1-flash-lite", "gemini-3.1-flash"],
+          "description":"Gemini model used for the agent loop."
+        }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -42,7 +138,7 @@
     "@vscode/test-electron": "^3.0.0",
     "eslint": "^10.5.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1"
+    "@typescript-eslint/eslint-plugin": "^8.61.1"
   },
   "overrides": {
     "diff": "^8.0.4",

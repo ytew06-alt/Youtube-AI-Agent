@@ -1,8 +1,98 @@
-The Ideal Workflow:
-Since both your Python server and your VS Code extension are under active development, the best way to work is to keep them both running in the background.
+# RedClip AI
 
-Terminal 1 (inside ai-agent): Run npm run watch. (This auto-compiles your TypeScript on save).
+**Turn YouTube coding tutorials into working code.** Paste a video link and RedClip AI watches it and reconstructs every file typed on screen. No pausing, scrubbing, or squinting at blurry text.
 
-Terminal 2 (inside ai_agent): Run uv run uvicorn server:app --reload. (This auto-restarts your Python server on save).
+It's also a full coding agent: it can read, write, and run files in your workspace, right from a chat panel in the left sidebar.
 
-Press F5 on extensions file: Open the dev window and test your extension
+![RedClip AI chat panel in the sidebar](media/demo.png)
+
+---
+
+## Getting Started
+
+1. **Install `uv`.** RedClip AI's backend runs on it. [Install guide](https://docs.astral.sh/uv/getting-started/installation/) — restart VS Code once it's installed.
+2. **Get a Gemini API key.** Free, from [Google AI Studio](https://aistudio.google.com/apikey).
+3. **Add your key.** `Ctrl+Shift+P` → **AI Agent: Set API Key**.
+
+![Setting the API key via the Command Palette](media/help_commands.png)
+
+4. **Open a project folder.** RedClip AI needs a workspace to read and write files in.
+5. **Start chatting.** Click the RedClip AI icon in the Activity Bar, or the status bar button, and paste a tutorial link or describe what you want built.
+
+---
+
+## Features
+
+### YouTube tutorial → code
+Paste a tutorial link. RedClip AI watches the video, tracks what's typed across every file shown on screen, and reconstructs the final code. Longer videos are chunked and merged automatically, so length isn't a limit.
+
+### A real coding agent
+Beyond video extraction, RedClip AI can:
+- Read files and list your project's structure
+- Write new files or edit existing ones (with your approval — see below)
+- Run Python files and report the output
+- Inspect an entire project in a single call, so it doesn't need to ask you file-by-file
+
+### Explicit write approvals
+Before anything is written to your disk, the exact code is presented in the chat for you to Approve or Reject. If you reject it, the code remains in the chat for you to copy manually. What you see is exactly what gets written.
+
+### Opt-in code execution
+Running code is disabled by default. Enabling execution is a one-time, explicit choice per workspace. See the Security section below before enabling this feature.
+
+### Native sidebar integration
+There are no separate windows to manage. The agent lives in a native VS Code chat panel right next to your editor, with a quick-access shortcut in the status bar.
+
+---
+
+## Under the Hood
+RedClip AI isn't just a basic chat wrapper. It's built to handle complex parsing without freezing your editor:
+- **Python & `uv`:** The backend agent is written entirely in Python, utilizing `uv` for lightning-fast package management and execution.
+- **Multithreading:** Core extraction and file inspection tasks are multithreaded to ensure the VS Code UI remains perfectly smooth during heavy workloads.
+- **Chunked Processing:** To bypass API token limits, long video transcripts are dynamically chunked, processed by the Gemini API, and intelligently stitched back together into a cohesive codebase.
+
+---
+
+## Security
+
+- **Execution is opt-in:** Code execution is off by default and must be explicitly enabled per workspace. Trusting one project does not automatically trust another.
+- **No sandbox:** Code you approve to run executes with your full user permissions, exactly as if you ran it yourself in a terminal.
+- **Approval gates:** Files are only written to disk after you explicitly approve them in the chat.
+- **Secret blocking:** The agent will refuse to read files that commonly hold secrets (like `.env`, `.pem`/`.key` files, SSH keys, and cloud credentials).
+- **Key storage:** Your Gemini API key is stored securely in VS Code's built-in SecretStorage and is never written to disk in plain text.
+
+Always review code before enabling execution, especially if it was reconstructed from a third-party video you don't control.
+
+---
+
+## Local Development & Contributing
+
+Want to look under the hood, fix a bug, or add a feature? Contributions are highly encouraged!
+
+1. **Clone the repo:** `git clone https://github.com/ytew06-alt/Youtube-AI-Agent.git`
+2. **Open the project in VS Code:** `code Youtube-AI-Agent`
+3. **Run the extension:** Press `F5` in VS Code. This will compile the TypeScript and open a new "Extension Development Host" window with RedClip AI loaded in debug mode.
+4. **Make your changes:** Test them out locally and open a Pull Request!
+
+---
+
+## Requirements
+
+- [`uv`](https://docs.astral.sh/uv/) installed and on your PATH
+- A Gemini API key ([free tier available](https://aistudio.google.com/apikey))
+- An open workspace folder
+
+---
+
+## Bring your own key
+RedClip AI is bring-your-own-API-key; nothing is billed through the extension itself. Google's free tier is generous but has daily limits; if you hit one, RedClip AI tells you when it resets instead of failing silently.
+
+---
+
+## Known limitations
+- Most thoroughly tested on Linux/WSL, and tested moderately on Windows but not tested on macOS. Please [open an issue](https://github.com/ytew06-alt/Youtube-AI-Agent/issues) if something behaves differently on your platform.
+- Very long videos take proportionally longer to process, since each chunk is a separate request.
+
+---
+
+## Feedback
+Found a bug or have a feature request? [Open an issue](https://github.com/ytew06-alt/Youtube-AI-Agent/issues).

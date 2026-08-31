@@ -1,5 +1,5 @@
 import os
-from config import MAX_CHARS,safe_resolve
+from config import MAX_CHARS,safe_resolve,is_sensitive
 def get_file_content(working_directory: str, file_path: str) -> str:
     try:
         #cleans up the path by removing ../ etc
@@ -8,7 +8,10 @@ def get_file_content(working_directory: str, file_path: str) -> str:
             return f'Error: Cannot read "{file_path}" as it is outside the permitted working directory'
 
         #check if directory is within or oustide working directory        #look for longest common parent directory and if it matches working directory then its valid
-        
+    if is_sensitive(file_path):
+         return(f'Refused: "{file_path}" may contain secrets (API keys, tokens, '
+                f'private keys). Reading it is blocked. Ask the user to share '
+                f'only the specific value you need.')
     if not os.path.isfile(abs_file_path):
         return f'Error: File not found or is not a regular file: "{file_path}"'
 

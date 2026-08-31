@@ -6,53 +6,86 @@ import { startBackend, stopBackend, BackendHandle } from './backend';
 let handle: BackendHandle | undefined;
 let sessionToken: string;
 
-export function activate(context: vscode.ExtensionContext) {
-    sessionToken = crypto.randomBytes(32).toString('hex');
+interface ConnectionContext {
+    h: BackendHandle;
+    apiKey: string;
+    workingDir: string;
+    executionEnabled: boolean;
+}
 
-    // MUST come before startBackend - it takes this as an argument.
-    const outputChannel = vscode.window.createOutputChannel('AI Agent Backend');
-    outputChannel.appendLine('Starting Python backend...');
+class ChatViewProvider implements vscode.WebviewViewProvider {
+    public static readonly viewType = 'aiAgent.chatView';
+    private static readonly MAX_RETRY_ATTEMPTS = 3;
 
-    const ready: Promise<BackendHandle> = Promise.resolve(
-        vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Window, title: 'Starting AI Agent backend...' },
-            () => startBackend(context, sessionToken, outputChannel)
-        )
-    ).then(h => { handle = h; return h; });
+    private view?: vscode.WebviewView;
+    private socket: WebSocket | null = null;
+    private retryAttempts = 0;
+    private retryTimeout: NodeJS.Timeout | undefined;
+    private conn?: ConnectionContext;
 
-    ready.catch((err: any) => {
-        outputChannel.appendLine(`\n[AI Agent] ${err.message}`);
-        vscode.window.showErrorMessage(`AI Agent backend failed to start: ${err.message}`);
-    });
+    constructor(
+        private readonly context: vscode.ExtensionContext,
+        private readonly ready: Promise<BackendHandle>
+    ) {}
 
-    const setKeyCommand = vscode.commands.registerCommand('ai-agent.setApiKey', async () => {
-        const apiKey = await vscode.window.showInputBox({
-            prompt: 'Enter your Gemini API Key',
-            password: true
+    resolveWebviewView(webviewView: vscode.WebviewView) {
+        this.view = webviewView;
+
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')]
+        };
+
+        const logoUri = webviewView.webview.asWebviewUri(
+            vscode.Uri.joinPath(this.context.extensionUri, 'media', 'logo.png')
+        );
+        webviewView.webview.html = getChatHtml(webviewView.webview, logoUri);
+
+        webviewView.webview.onDidReceiveMessage((message) => this.handleWebviewMessage(message));
+
+        webviewView.onDidDispose(() => {
+            if (this.retryTimeout) { clearTimeout(this.retryTimeout); }
+            this.socket?.close();
+            this.socket = null;
+            this.view = undefined;
+            this.conn = undefined;
         });
-        if (apiKey) {
-            await context.secrets.store('gemini_api_key', apiKey);
-            vscode.window.showInformationMessage('API Key saved!');
-        }
-    });
 
-    const disposable = vscode.commands.registerCommand('ai-agent.openChat', async () => {
-        const apiKey = await context.secrets.get('gemini_api_key');
+        this.start();
+    }
+
+    /** Send a message to the webview, if it still exists. */
+    private post(message: any) {
+        this.view?.webview.postMessage(message);
+    }
+
+    /**
+     * A view resolves as soon as the user clicks the sidebar icon, so we
+     * cannot refuse to create it the way a panel could. Missing prerequisites
+     * are reported inside the view instead.
+     * Public so the setApiKey command can re-run it without a window reload.
+     */
+    public async start() {
+        if (!this.view) { return; }
+
+        const apiKey = await this.context.secrets.get('gemini_api_key');
         if (!apiKey) {
-            vscode.window.showWarningMessage('Please set your API key first using "AI Agent: Set API Key"');
+            this.post({ type: 'connectionState', state: 'backend_down' });
+            this.post({ type: 'status', text: 'No API key set. Press Command + Shift + P and Run "AI Agent: Set API Key" to get started.' });
             return;
         }
 
         const folders = vscode.workspace.workspaceFolders;
         if (!folders || folders.length === 0) {
-            vscode.window.showErrorMessage('Please open a project folder before using AI Agent.');
+            this.post({ type: 'connectionState', state: 'backend_down' });
+            this.post({ type: 'status', text: 'Open a project folder to use AI Agent.' });
             return;
         }
         const workingDir = folders[0].uri.fsPath;
 
         // Ask once per workspace whether the agent may execute code. Stored in
         // workspaceState, so trusting your own repo does not trust a stranger's.
-        let allowExecution = context.workspaceState.get<boolean>('allowExecution');
+        let allowExecution = this.context.workspaceState.get<boolean>('allowExecution');
 
         if (allowExecution === undefined && vscode.workspace.isTrusted) {
             const choice = await vscode.window.showWarningMessage(
@@ -64,120 +97,194 @@ export function activate(context: vscode.ExtensionContext) {
                 'Read-only mode'
             );
             allowExecution = choice === 'Enable execution';
-            await context.workspaceState.update('allowExecution', allowExecution);
+            await this.context.workspaceState.update('allowExecution', allowExecution);
         }
 
         const executionEnabled = Boolean(allowExecution) && vscode.workspace.isTrusted;
 
-        // Wait for the backend to report its port before opening the panel.
+        // Wait for the backend to report its port before connecting.
         let h: BackendHandle;
         try {
-            h = await ready;
+            h = await this.ready;
         } catch (err: any) {
-            vscode.window.showErrorMessage(`Backend unavailable: ${err.message}`);
+            this.post({ type: 'connectionState', state: 'backend_down' });
+            this.post({ type: 'status', text: 'Backend unavailable: ' + err.message });
             return;
         }
 
-        const panel = vscode.window.createWebviewPanel(
-            'aiAgentChat', 'AI AGENT', vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true, localResourceRoots:[vscode.Uri.joinPath(context.extensionUri,'media')]}
-        );
-        const logoUri=panel.webview.asWebviewUri(
-            vscode.Uri.joinPath(context.extensionUri,'media','logo.png')
-        )
-        panel.webview.html = getChatHtml(panel.webview,logoUri);
+        this.conn = { h, apiKey, workingDir, executionEnabled };
+        this.connect();
+    }
 
-        let socket: WebSocket | null = null;
-        let retryAttempts = 0;
-        // was 10 - the port is known now, so this only covers the ms gap before accept()
-        const MAX_RETRY_ATTEMPTS = 3;
-        let retryTimeout: NodeJS.Timeout | undefined;
+    private connect() {
+        if (!this.conn) { return; }
+        const { h, apiKey, workingDir, executionEnabled } = this.conn;
 
-        function connect() {
-            panel.webview.postMessage({ type: 'connectionState', state: 'connecting' });
-            socket = new WebSocket(`ws://127.0.0.1:${h.port}/chat`, {
-                headers: { 'x-agent-token': h.token }
-            });
+        this.post({ type: 'connectionState', state: 'connecting' });
+        const socket = new WebSocket(`ws://127.0.0.1:${h.port}/chat`, {
+            headers: { 'x-agent-token': h.token }
+        });
+        this.socket = socket;
 
-            socket.on('open', () => {
-                retryAttempts = 0; // was never reset before
-                socket!.send(JSON.stringify({
-                    type: 'auth',
-                    api_key: apiKey!,
-                    allow_execution: executionEnabled
-                }));
-                socket!.send(workingDir);
-                panel.webview.postMessage({ type: 'status', text: 'Connected to backend.' });
-                panel.webview.postMessage({ type: 'connectionState', state: 'connected' });
-            });
+        socket.on('open', () => {
+            this.retryAttempts = 0;
 
-            socket.on('message', (data) => {
-                const text = data.toString();
-                if (text.startsWith('ASK:')) {
-                    try {
-                        panel.webview.postMessage({ type: 'ask', payload: JSON.parse(text.slice(4)) });
-                    } catch {
-                        // malformed ASK payload - ignore
-                    }
-                }
-                else if (text.startsWith('QUOTA:')){
-                    panel.webview.postMessage({type:'quota',text: text.slice(6)});
-                } 
-                else if (text.startsWith('UPDATE:')) {
-                    panel.webview.postMessage({ type: 'update', text: text.replace('UPDATE:', '') });
-                } 
-                else if (text.startsWith('DONE:')) {
-                    panel.webview.postMessage({ type: 'done', text: text.replace('DONE:', '') });
-                }
-                 else {
-                    panel.webview.postMessage({ type: 'update', text: text });
-                }
+            // User-selectable model, falls back to the package.json default.
+            const model = vscode.workspace.getConfiguration('aiAgent').get<string>('model');
+
+            socket.send(JSON.stringify({
+                type: 'auth',
+                api_key: apiKey,
+                allow_execution: executionEnabled,
+                model: model
+            }));
+            socket.send(workingDir);
+            this.post({ type: 'status', text: 'Connected to backend.' });
+            this.post({ type: 'connectionState', state: 'connected' });
         });
 
-            socket.on('error', (err: any) => {
-                if (err.code === 'ECONNREFUSED' && retryAttempts < MAX_RETRY_ATTEMPTS) {
-                    retryAttempts++;
-                    panel.webview.postMessage({ type: 'connectionState', state: 'connecting' });
-                    retryTimeout = setTimeout(connect, 500);
-                } else {
-                    panel.webview.postMessage({ type: 'connectionState', state: 'disconnected' });
-                    panel.webview.postMessage({ type: 'status', text: 'Connection error: ' + err.message });
+        socket.on('message', (data) => {
+            const text = data.toString();
+            if (text.startsWith('ASK:')) {
+                try {
+                    this.post({ type: 'ask', payload: JSON.parse(text.slice(4)) });
+                } catch {
+                    // malformed ASK payload - ignore
                 }
-            });
-
-            socket.on('close', () => {
-                panel.webview.postMessage({ type: 'connectionState', state: 'disconnected' });
-            });
-        }
-
-        connect();
-
-        panel.webview.onDidReceiveMessage((message) => {
-            if (message.type === 'prompt') {
-                if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
-                    connect();
-                }
-                const payload = JSON.stringify({ type: 'prompt', text: message.text });
-
-                if (socket!.readyState === WebSocket.OPEN) {
-                    socket!.send(payload);
-                } else {
-                    socket!.once('open', () => socket!.send(payload));
-                }
-            } else if (message.type === 'approval') {
-                socket?.send(JSON.stringify({ type: 'approval', id: message.id, approved: message.approved }));
-            } else if (message.type === 'cancel') {
-                socket?.send(JSON.stringify({ type: 'cancel' }));
+            } else if (text.startsWith('QUOTA:')) {
+                this.post({ type: 'quota', text: text.slice(6) });
+            } else if (text.startsWith('UPDATE:')) {
+                this.post({ type: 'update', text: text.replace('UPDATE:', '') });
+            } else if (text.startsWith('DONE:')) {
+                this.post({ type: 'done', text: text.replace('DONE:', '') });
+            } else {
+                this.post({ type: 'update', text: text });
             }
         });
 
-        panel.onDidDispose(() => {
-            if (retryTimeout) { clearTimeout(retryTimeout); }
-            socket?.close();
+        socket.on('error', (err: any) => {
+            if (err.code === 'ECONNREFUSED' && this.retryAttempts < ChatViewProvider.MAX_RETRY_ATTEMPTS) {
+                this.retryAttempts++;
+                this.post({ type: 'connectionState', state: 'connecting' });
+                this.retryTimeout = setTimeout(() => this.connect(), 500);
+            } else {
+                this.post({ type: 'connectionState', state: 'disconnected' });
+                this.post({ type: 'status', text: 'Connection error: ' + err.message });
+            }
         });
+
+        socket.on('close', () => {
+            this.post({ type: 'connectionState', state: 'disconnected' });
+        });
+    }
+
+    private handleWebviewMessage(message: any) {
+        if (message.type === 'prompt') {
+            if (!this.socket
+                || this.socket.readyState === WebSocket.CLOSED
+                || this.socket.readyState === WebSocket.CLOSING) {
+                this.connect();
+            }
+            if (!this.socket) { return; }
+
+            const payload = JSON.stringify({ type: 'prompt', text: message.text });
+            if (this.socket.readyState === WebSocket.OPEN) {
+                this.socket.send(payload);
+            } else {
+                this.socket.once('open', () => this.socket?.send(payload));
+            }
+        } else if (message.type === 'approval') {
+            this.socket?.send(JSON.stringify({
+                type: 'approval', id: message.id, approved: message.approved
+            }));
+        } else if (message.type === 'cancel') {
+            this.socket?.send(JSON.stringify({ type: 'cancel' }));
+        }
+    }
+}
+
+export function activate(context: vscode.ExtensionContext) {
+    sessionToken = crypto.randomBytes(32).toString('hex');
+
+    // MUST come before startBackend - it takes this as an argument.
+    const outputChannel = vscode.window.createOutputChannel('RedClip AI Backend');
+    
+
+    const ready: Promise<BackendHandle> = Promise.resolve(
+        vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Window, title: 'Starting RedClip AI backend...' },
+            () => startBackend(context, sessionToken, outputChannel)
+        )
+    ).then(h => { handle = h; return h; });
+
+    ready.catch(async (err: any) => {
+        outputChannel.appendLine(`\n[AI Agent] ${err.message}`);
+        const choice = await vscode.window.showErrorMessage(
+            `RedClip AI backend failed to start: ${err.message}`,
+            'Retry'
+        );
+        if (choice === 'Retry') {
+            vscode.commands.executeCommand('workbench.action.reloadWindow');
+        }
+        });
+
+    const provider = new ChatViewProvider(context, ready);
+
+    // retainContextWhenHidden lives here now - it is no longer a
+    // createWebviewPanel option.
+    const viewRegistration = vscode.window.registerWebviewViewProvider(
+        ChatViewProvider.viewType,
+        provider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+    );
+
+    const setKeyCommand = vscode.commands.registerCommand('ai-agent.setApiKey', async () => {
+        const apiKey = await vscode.window.showInputBox({
+            prompt: 'Enter your Gemini API Key',
+            password: true
+        });
+        if (apiKey) {
+            await context.secrets.store('gemini_api_key', apiKey);
+            vscode.window.showInformationMessage('API Key saved!');
+            // Reconnect immediately instead of making the user reload.
+            provider.start();
+        }
     });
 
-    context.subscriptions.push(setKeyCommand, disposable, outputChannel);
+    const openWalkthroughCommand = vscode.commands.registerCommand('ai-agent.openWalkthrough', () => {
+    vscode.commands.executeCommand(
+        'workbench.action.openWalkthrough',
+        `${context.extension.id}#aiAgent.gettingStarted`
+    );
+    });
+    // The view is created by VS Code, so this command just reveals it.
+    const openChatCommand = vscode.commands.registerCommand('ai-agent.openChat', () => {
+        vscode.commands.executeCommand('aiAgent.chatView.focus');
+    });
+    const statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+    );
+    const hasSeenWalkthrough = context.globalState.get<boolean>('hasSeenWalkthrough');
+    if (!hasSeenWalkthrough) {
+        vscode.commands.executeCommand(
+            'workbench.action.openWalkthrough',
+            `${context.extension.id}#aiAgent.gettingStarted`
+        );
+        context.globalState.update('hasSeenWalkthrough', true);
+    }
+    const copyUvCommand = vscode.commands.registerCommand('ai-agent.copyUvInstallCommand', async () => {
+    const command = process.platform === 'win32'
+        ? 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
+        : 'curl -LsSf https://astral.sh/uv/install.sh | sh';
+    await vscode.env.clipboard.writeText(command);
+    vscode.window.showInformationMessage('Install command copied. Run it in a terminal, then restart VS Code.');
+    });
+    statusBarItem.text = '$(comment-discussion) AI Agent';
+    statusBarItem.tooltip = 'Open RedClip AI chat';
+    statusBarItem.command = 'ai-agent.openChat';
+    statusBarItem.show();
+    context.subscriptions.push(viewRegistration, setKeyCommand, openChatCommand, outputChannel,statusBarItem,openWalkthroughCommand,copyUvCommand);
 }
 
 export function deactivate() {
@@ -196,8 +303,7 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src ws://127.0.0.1:*;">
     <style>
         /* Height chain so the chat window scrolls inside its own box instead
-           of the whole page growing. Purely functional - the panel looks the
-           same, long conversations just behave. */
+           of the whole page growing. */
         html, body {
             height: 100%;
         }
@@ -208,7 +314,7 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             display: flex;
             flex-direction: column;
             font-family: var(--vscode-font-family);
-            background: var(--vscode-editor-background);
+            background: var(--vscode-sideBar-background, var(--vscode-editor-background));
             color: var(--vscode-editor-foreground);
         }
 
@@ -226,9 +332,11 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             justify-content: flex-start;
         }
 
+        /* Wider than the panel version - a sidebar is only ~300px across, so
+           85% wasted too much of it. */
         .chat-bubble {
-            max-width: 85%;
-            padding: 10px 14px;
+            max-width: 92%;
+            padding: 9px 12px;
             border-radius: 12px;
             line-height: 1.5;
             word-wrap: break-word;
@@ -262,23 +370,22 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             background: var(--vscode-textCodeBlock-background);
             border: 1px solid var(--vscode-widget-border);
             border-radius: 8px;
-            padding: 12px;
+            padding: 10px;
             margin: 8px 0;
             overflow-x: auto;
             font-family: var(--vscode-editor-font-family);
-            font-size: 13px;
-            color: var(--vscode-editor-foreground)
+            font-size: 11.5px;
+            color: var(--vscode-editor-foreground);
         }
 
         .code-lang {
-            font-size: 11px;
+            font-size: 10px;
             text-transform: uppercase;
             color: var(--vscode-editor-foreground);
             margin-bottom: 6px;
-            opacity:0.55;
+            opacity: 0.55;
         }
 
-        /* ADDED: copy button on code blocks */
         .copy-button {
             position: absolute;
             top: 6px;
@@ -308,10 +415,9 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             background: var(--vscode-list-hoverBackground);
         }
 
-        /* ADDED: collapsible tool-call trace */
         .tool-trace {
             align-self: flex-start;
-            max-width: 85%;
+            max-width: 100%;
             margin-bottom: 12px;
             font-size: 12px;
             color: var(--vscode-descriptionForeground);
@@ -340,8 +446,8 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
         .tool-trace[open] .trace-chevron { transform: rotate(90deg); }
 
         .tool-trace-steps {
-            margin: 7px 0 0 13px;
-            padding-left: 13px;
+            margin: 7px 0 0 10px;
+            padding-left: 10px;
             border-left: 1px solid var(--vscode-widget-border);
             display: flex;
             flex-direction: column;
@@ -350,15 +456,15 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
 
         .tool-trace-step {
             font-family: var(--vscode-editor-font-family);
-            font-size: 11.5px;
+            font-size: 11px;
             word-wrap: break-word;
         }
 
         .approval-card {
-            max-width: 95%;
+            width: 100%;
             border: 1px solid var(--vscode-inputValidation-warningBorder);
             border-radius: 12px;
-            padding: 14px;
+            padding: 12px;
             background: var(--vscode-editorWidget-background);
         }
 
@@ -366,6 +472,7 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             font-weight: 600;
             margin-bottom: 8px;
             color: var(--vscode-editor-foreground);
+            word-wrap: break-word;
         }
 
         .approval-buttons {
@@ -397,8 +504,9 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-bottom: 12px;
-            font-size: 13px;
+            padding: 10px 12px 0;
+            font-size: 12px;
+            flex-shrink: 0;
             /* Use muted foreground for secondary text */
             color: var(--vscode-descriptionForeground);
         }
@@ -408,6 +516,7 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             height: 8px;
             border-radius: 50%;
             background: #999;
+            flex-shrink: 0;
         }
 
         /* Error states */
@@ -422,37 +531,41 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             width: 100%;
             flex: 1;
             min-height: 0;
-            padding: 20px;
+            padding: 12px;
             box-sizing: border-box;
             background-color: transparent;
         }
 
+        /* Smaller than the panel version - 22px dominated a narrow sidebar. */
         .agent-title {
-            margin-top: 0;
-            font-size: 22px;
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
             color: var(--vscode-editor-foreground);
         }
-        
-        .agent-title-row{
+
+        .agent-title-row {
             display: flex;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 16px;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-shrink: 0;
         }
-        .agent-logo{
-        width: 32px;
-        height: 32px;
-        border-radius: 7px;
-        flex-shrink: 0;
-    }
 
+        .agent-logo {
+            width: 22px;
+            height: 22px;
+            border-radius: 5px;
+            flex-shrink: 0;
+        }
+
+        /* No border or panel background - a boxed container inside a narrow
+           sidebar reads as cramped. */
         .chat-window {
             flex: 1;
             min-height: 0;
-            padding: 16px;
-            background-color: var(--vscode-editorWidget-background);
-            border-radius: 12px;
-            border: 1px solid var(--vscode-widget-border);
+            padding: 0;
             overflow-y: auto;
         }
 
@@ -461,7 +574,6 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             line-height: 1.5;
         }
 
-        /* ADDED: rendered markdown inside message bubbles */
         .md-p {
             margin: 0 0 10px;
             line-height: 1.6;
@@ -478,13 +590,13 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
         }
 
         .md-h:first-child { margin-top: 0; }
-        .md-h1 { font-size: 1.3em; }
-        .md-h2 { font-size: 1.16em; }
-        .md-h3 { font-size: 1.05em; }
+        .md-h1 { font-size: 1.25em; }
+        .md-h2 { font-size: 1.12em; }
+        .md-h3 { font-size: 1.04em; }
 
         .md-list {
             margin: 0 0 10px;
-            padding-left: 22px;
+            padding-left: 18px;
         }
 
         .md-list li {
@@ -522,10 +634,10 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             margin: 14px 0;
         }
 
-        /* ADDED: composer replaces the absolutely-positioned buttons */
         .input-area {
             position: relative;
-            margin-top: 18px;
+            margin-top: 12px;
+            flex-shrink: 0;
         }
 
         .composer {
@@ -545,14 +657,14 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
         .prompt-input {
             display: block;
             width: 100%;
-            min-height: 44px;
-            max-height: 180px;
-            padding: 12px 13px 4px;
+            min-height: 40px;
+            max-height: 160px;
+            padding: 10px 11px 4px;
             border: none;
             background: transparent;
             color: var(--vscode-input-foreground);
             font-family: var(--vscode-font-family);
-            font-size: 14px;
+            font-size: 13px;
             line-height: 1.5;
             resize: none;
             overflow-y: auto;
@@ -565,15 +677,21 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 5px 7px 7px 13px;
+            padding: 4px 6px 6px 11px;
         }
 
         .composer-hint {
-            font-size: 10.5px;
+            font-size: 10px;
             color: var(--vscode-descriptionForeground);
             opacity: 0.8;
         }
-        
+
+        /* The hint is the first thing to go when the sidebar is narrow -
+           the shortcut still works, it just stops being advertised. */
+        @media (max-width: 280px) {
+            .composer-hint { display: none; }
+        }
+
         .composer-actions {
             display: flex;
             align-items: center;
@@ -584,8 +702,8 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
         .typing-indicator {
             display: flex;
             gap: 6px;
-            padding: 14px 18px;
-            min-height: 24px;
+            padding: 12px 16px;
+            min-height: 22px;
         }
 
         .dot {
@@ -614,44 +732,49 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            height: 28px;
-            width: 28px;
+            height: 26px;
+            width: 26px;
             border-radius: 50%;
             border: none;
             /* Match native VS Code buttons */
             background: var(--vscode-button-background);
             color: var(--vscode-button-foreground);
             cursor: pointer;
+            flex-shrink: 0;
         }
 
-        /* hovering the send button changes the cursor */
         #send-button:hover:not(:disabled) {
             background: var(--vscode-button-hoverBackground);
         }
 
-        #quota-text {
-            margin-left: auto;
-            opacity: 0.75;
-            font-size: 11px;
-            }
         #send-button:disabled {
             opacity: 0.4;
             cursor: default;
         }
 
+        #quota-text {
+            margin-left: auto;
+            opacity: 0.75;
+            font-size: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         #cancel-button {
             display: none;
             align-items: center;
-            gap: 6px;
-            height: 28px;
-            padding: 0 11px;
-            border-radius: 14px;
+            gap: 5px;
+            height: 26px;
+            padding: 0 10px;
+            border-radius: 13px;
             border: 1px solid var(--vscode-errorForeground);
             background: transparent;
             color: var(--vscode-errorForeground);
             font-family: var(--vscode-font-family);
-            font-size: 11.5px;
+            font-size: 11px;
             cursor: pointer;
+            flex-shrink: 0;
         }
 
         #cancel-button:hover {
@@ -673,7 +796,7 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
     <div class="agent-container">
         <div class="agent-title-row">
             <img class="agent-logo" src="${logoUri}" alt="" />
-            <h1 class="agent-title">AI AGENT</h1>
+            <h1 class="agent-title">RedClip AI</h1>
         </div>
         <div class="chat-window" id="chat-window">
             <p class="chat-text">Agent: System initialized. Ready to code.</p>
@@ -704,7 +827,7 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
 
         // Fixed, developer-authored icon markup. Never combined with user or
         // model text, so innerHTML is safe for these specifically.
-        const SEND_ICON = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13.5V3M3.5 7.5L8 3L12.5 7.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        const SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13.5V3M3.5 7.5L8 3L12.5 7.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         const STOP_ICON = '<svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><rect width="10" height="10" rx="2.5"/></svg>';
         const COPY_ICON = '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.8" stroke="currentColor" stroke-width="1.25"/><path d="M9.2 5V2.8A1.8 1.8 0 0 0 7.4 1H2.8A1.8 1.8 0 0 0 1 2.8V7.4A1.8 1.8 0 0 0 2.8 9.2H5" stroke="currentColor" stroke-width="1.25"/></svg>';
         const CHECK_ICON = '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.8 7.4L5.6 10.2L11.2 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -721,10 +844,6 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
         cancelButton.innerHTML = STOP_ICON + '<span>Stop</span>';
 
         // --- Chat persistence (getState/setState) ---
-        // Keeps the conversation across the webview being hidden and shown
-        // again (tab switches). chatLog holds only plain addMessage entries;
-        // pending approval cards and in-progress trace steps are
-        // intentionally not persisted.
         let chatLog = [];
 
         function saveState() {
@@ -755,7 +874,6 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
 
         }
 
-        // ADDED: copy-to-clipboard for code blocks
         function fallbackCopy(text) {
             const ta = document.createElement('textarea');
             ta.value = text;
@@ -1033,9 +1151,8 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             renderMessage(text, sender);
         }
 
-        // ADDED: tool-call trace.
-        // UPDATE messages collapse into one growing group per turn, so a long
-        // agentic run shows "13 steps" instead of thirteen separate bubbles.
+        // Tool-call trace: UPDATE messages collapse into one growing group per
+        // turn, so a long agentic run shows "13 steps" instead of 13 bubbles.
         let currentTrace = null;
 
         function ensureTrace() {
@@ -1167,8 +1284,8 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
             addApprovalCard(message.payload);
             return;
         }
-        // ADDED: updates feed the trace, and the loading dots stay up
-        // afterwards so the panel never looks idle mid-task.
+        // Updates feed the trace, and the loading dots stay up afterwards so
+        // the panel never looks idle mid-task.
         if(message.type==='update'){
             removeTypingIndicator();
             addTraceStep(message.text);
@@ -1244,7 +1361,7 @@ function getChatHtml(webview: vscode.Webview, logoUri: vscode.Uri): string {
 
         sendButton.addEventListener('click', submitPrompt);
 
-        // ADDED: Enter sends, Shift+Enter inserts a newline.
+        // Enter sends, Shift+Enter inserts a newline.
         textarea.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();

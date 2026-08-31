@@ -1,12 +1,12 @@
 import os
 import subprocess
-import shutil
+import sys
 from config import safe_resolve
 
 
 def run_python_file(working_directory: str, file_path: str, args: list[str] | None = None) -> str:
     try:
-        python_exe = shutil.which("python3") or shutil.which("python")
+        python_exe = sys.executable
         if python_exe is None:
             return "Error: No Python interpreter found on this system"
 
@@ -26,7 +26,7 @@ def run_python_file(working_directory: str, file_path: str, args: list[str] | No
         command = [python_exe, abs_file_path]
         if args is not None:
             command.extend(args)
-        obj = subprocess.run(command, cwd=abs_working_dir, stdout=subprocess.PIPE,
+        obj = subprocess.run(command, cwd=abs_working_dir, stdout=subprocess.PIPE,stdin=subprocess.DEVNULL,
                              stderr=subprocess.PIPE, text=True, timeout=30)
         output_string = ""
         if obj.returncode != 0:

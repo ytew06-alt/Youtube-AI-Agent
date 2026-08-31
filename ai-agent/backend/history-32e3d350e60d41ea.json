@@ -1,0 +1,55 @@
+[
+    {
+        "parts": [
+            {
+                "media_resolution": null,
+                "code_execution_result": null,
+                "executable_code": null,
+                "file_data": null,
+                "function_call": null,
+                "function_response": null,
+                "inline_data": null,
+                "text": "list files",
+                "thought": null,
+                "thought_signature": null,
+                "video_metadata": null,
+                "tool_call": null,
+                "tool_response": null,
+                "part_metadata": null,
+                "audio_transcription": null
+            }
+        ],
+        "role": "user"
+    },
+    {
+        "parts": [
+            {
+                "media_resolution": null,
+                "code_execution_result": null,
+                "executable_code": null,
+                "file_data": null,
+                "function_call": null,
+                "function_response": {
+                    "will_continue": null,
+                    "scheduling": null,
+                    "parts": null,
+                    "id": null,
+                    "name": "get_files_info",
+                    "response": {
+                        "result": ""
+                    }
+                },
+                "inline_data": null,
+                "text": null,
+                "thought": null,
+                "thought_signature": null,
+                "video_metadata": null,
+                "tool_call": null,
+                "tool_response": null,
+                "part_metadata": null,
+                "audio_transcription": null
+            }
+        ],
+        "role": "tool"
+    }
+]

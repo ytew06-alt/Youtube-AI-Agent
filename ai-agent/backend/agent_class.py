@@ -46,8 +46,9 @@ def print_history_debug(messages_list, stage_name="DEBUG"):
     print("=" * (10 + len(stage_name)) + "\n")
 
 class Agent:
-    def __init__(self,working_directory,api_key,allow_execution=False):
+    def __init__(self,working_directory,api_key,allow_execution=False,model=None):
         self.ws_key=workspace_key(working_directory)
+        self.model= model or AGENT_MODEL
 
         self.working_directory=working_directory
         self.messages=[]
@@ -228,7 +229,8 @@ class Agent:
     def _save_history(self):
         message_list=[]
         for message in self.messages:
-            message_list.append(message.model_dump(mode="json"))
+            if hasattr(message,"model_dump"):
+                message_list.append(message.model_dump(mode="json"))
         with open(state_path("history.json", self.ws_key), "w") as f:
             json.dump(message_list,f,indent=4)
     
@@ -340,12 +342,10 @@ WRITING FILES
 
 Before writing:
 
-- Read the target file if its current contents are unknown.
-- Produce the complete updated file.
-- Write the file once.
-
-Avoid repeatedly rewriting the same file with small incremental edits.
-
+- If you are creating a NEW file, do not read it first. A "File not found"
+  error simply means the file does not exist yet, which is expected. Call
+  write_file directly.
+- Only read the target file first when MODIFYING a file that already exists.
 =========================
 RUNNING CODE
 =========================

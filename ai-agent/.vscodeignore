@@ -1,11 +1,26 @@
 .vscode/**
 .vscode-test/**
 src/**
-.gitignore
-.yarnrc
-vsc-extension-quickstart.md
+**/*.ts
+**/*.map
 **/tsconfig.json
 **/eslint.config.mjs
-**/*.map
-**/*.ts
-**/.vscode-test.*
+.gitignore
+backend/.venv/**
+backend/**/__pycache__/**
+backend/**/*.pyc
+backend/tests/**
+backend/.env
+backend/history*.json
+backend/cache*.json
+backend/gemini_usage.json
+# Test caches and scratchpads
+backend/.pytest_cache/**
+backend/calculator/**
+backend/t.py
+backend/.python-version
+
+# VS Code extension testing/boilerplate junk
+out/test/**
+.vscode-test.mjs
+vsc-extension-quickstart.md

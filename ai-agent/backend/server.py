@@ -70,27 +70,33 @@ async def chat_endpoint(websocket: WebSocket):
         return
 
     await websocket.accept()
-
+    #declared outside of try block otherwise go out of scope if try fails
     reader_task = None
+    #dictinaory of Future objects, that wait for code to call .set_result(value) on it
     pending: dict[str, Future] = {}
 
     def release_pending():
         """Unblock any worker thread waiting on an approval that can no longer
         be answered (socket closed, panel disposed). Denying is the safe default."""
+        #checks every future object in pending
         for fut in pending.values():
+            #if no one has set result
             if not fut.done():
                 fut.set_result(False)
         pending.clear()
 
     try:
         # --- Auth payload ---
+        #await means it runs on the main thread whihc is the event loop
         first_message = await websocket.receive_text()
         try:
+            #converts raw text string into json
             auth_data = json.loads(first_message)
             api_key = auth_data.get("api_key")
-            # Default DENY: a malformed payload must lose the capability,
+            # Default DENY: if a key is missing it defaults to false,
             # never gain it.
             allow_execution = bool(auth_data.get("allow_execution", False))
+            model=auth_data.get("model") or None
             if not api_key:
                 raise ValueError("No API key found in payload")
         except (json.JSONDecodeError, ValueError):
@@ -101,12 +107,16 @@ async def chat_endpoint(websocket: WebSocket):
         working_dir = await websocket.receive_text()
 
         loop = asyncio.get_running_loop()
+        #queue to put and get prompts
         prompts: asyncio.Queue = asyncio.Queue()
         cancel_event=threading.Event()
         async def reader():
             """The ONLY coroutine that reads the socket after handshake."""
+            #this function listens to websockets comintously for messages from UI
             try:
+                #infinite loop
                 while True:
+                    #freezes till user gives something from vs code
                     raw = await websocket.receive_text()
                     try:
                         msg = json.loads(raw)
@@ -115,8 +125,11 @@ async def chat_endpoint(websocket: WebSocket):
 
                     kind = msg.get("type")
                     if kind == "approval":
+                        #return the Future object value
                         fut = pending.pop(msg.get("id"), None)
                         if fut and not fut.done():
+                            #the value of fut is injected into a Future obj
+                            #this causes the worker thread to now wake up
                             fut.set_result(bool(msg.get("approved")))
                     elif kind == "prompt":
                         await prompts.put(msg.get("text", ""))
@@ -134,11 +147,15 @@ async def chat_endpoint(websocket: WebSocket):
         def request_approval(kind: str, path: str, content: str) -> bool:
             """Called FROM the agent's worker thread. Must not touch the loop
             directly - everything goes through run_coroutine_threadsafe."""
+
+            #uuid generates a random string as ID
             approval_id = str(uuid.uuid4())
             fut: Future = Future()
+            #ID corresponds to a Future obj
             pending[approval_id] = fut
 
             try:
+                #creates a threadsafe way to send to the websocket message into the main loop
                 asyncio.run_coroutine_threadsafe(
                     websocket.send_text("ASK:" + json.dumps({
                         "id": approval_id,
@@ -153,6 +170,8 @@ async def chat_endpoint(websocket: WebSocket):
                 return False        # couldn't even ask -> deny
 
             try:
+                #worker thread frozen and asks if future obj has gotten set_result called on it
+                #this for write file functioanloty waiting for user to press accept
                 return fut.result(timeout=APPROVAL_TIMEOUT)
             except Exception:
                 pending.pop(approval_id, None)
@@ -167,10 +186,11 @@ async def chat_endpoint(websocket: WebSocket):
         # history/cache load is missed.
         reader_task = asyncio.create_task(reader())
 
-        agent = Agent(working_dir, api_key=api_key, allow_execution=allow_execution)
+        agent = Agent(working_dir, api_key=api_key, allow_execution=allow_execution,model=model)
 
         # --- Main loop: pull prompts off the queue, never off the socket. ---
         while True:
+            #waits till queue gets a prompt
             user_message = await prompts.get()
             if user_message is None:        # reader signalled disconnect
                 break
@@ -190,6 +210,8 @@ async def chat_endpoint(websocket: WebSocket):
                 continue
 
             try:
+                #spawns a background worker thread to handle the gemini calls in agent
+                #the await here is for the main loop for its normal awaits while worker thread runs
                 reply = await loop.run_in_executor(
                     None, agent.chat,
                     user_message, False, send_update, request_approval,cancel_event

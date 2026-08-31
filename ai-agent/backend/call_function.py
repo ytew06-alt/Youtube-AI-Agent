@@ -26,7 +26,7 @@ def generate_key(function_name: str, args:dict) ->str:
     else:
         prefix=""
     json_args=json.dumps(args,sort_keys=True)
-    return f"{prefix}{function_name}:{json_args}"
+    return f"{prefix}|{function_name}:{json_args}"
 
 
 schema_get_files_info = types.FunctionDeclaration(
@@ -68,11 +68,13 @@ schema_write_file = types.FunctionDeclaration(
                 type=types.Type.STRING,
                 description="Path to the file to write, relative to the working directory.",
             ),
+            
             "content": types.Schema(
                 type=types.Type.STRING,
                 description="The text content to write to the file.",
             ),
         },
+        required=["file_path","content"],
     ),
 )
 

@@ -1,0 +1,55 @@
+[
+    {
+        "parts": [
+            {
+                "media_resolution": null,
+                "code_execution_result": null,
+                "executable_code": null,
+                "file_data": null,
+                "function_call": null,
+                "function_response": null,
+                "inline_data": null,
+                "text": "run it",
+                "thought": null,
+                "thought_signature": null,
+                "video_metadata": null,
+                "tool_call": null,
+                "tool_response": null,
+                "part_metadata": null,
+                "audio_transcription": null
+            }
+        ],
+        "role": "user"
+    },
+    {
+        "parts": [
+            {
+                "media_resolution": null,
+                "code_execution_result": null,
+                "executable_code": null,
+                "file_data": null,
+                "function_call": null,
+                "function_response": {
+                    "will_continue": null,
+                    "scheduling": null,
+                    "parts": null,
+                    "id": null,
+                    "name": "run_python_file",
+                    "response": {
+                        "error": "Code execution is disabled. The user has not granted permission to run files in this workspace."
+                    }
+                },
+                "inline_data": null,
+                "text": null,
+                "thought": null,
+                "thought_signature": null,
+                "video_metadata": null,
+                "tool_call": null,
+                "tool_response": null,
+                "part_metadata": null,
+                "audio_transcription": null
+            }
+        ],
+        "role": "tool"
+    }
+]

@@ -1,71 +1,88 @@
-# ai-agent README
+# RedClip AI
 
-This is the README for your extension "ai-agent". After writing up a brief description, we recommend including the following sections.
+**Turn YouTube coding tutorials into working code.** Paste a video link and RedClip AI watches it and reconstructs every file typed on screen. No pausing, scrubbing, or squinting at blurry text.
 
-## Features
+It's also a full coding agent: it can read, write, and run files in your workspace, right from a chat panel in the left sidebar.
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
-
-## Requirements
-
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
+![RedClip AI chat panel in the sidebar](media/demo.png)
 
 ---
 
-## Following extension guidelines
+## Getting Started
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+1. **Install `uv`.** RedClip AI's backend runs on it. [Install guide](https://docs.astral.sh/uv/getting-started/installation/) — restart VS Code once it's installed.
+2. **Get a Gemini API key.** Free, from [Google AI Studio](https://aistudio.google.com/apikey).
+3. **Add your key.** `Ctrl+Shift+P` → **AI Agent: Set API Key**.
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+![Setting the API key via the Command Palette](media/help_commands.png)
 
-## Working with Markdown
+4. **Open a project folder.** RedClip AI needs a workspace to read and write files in.
+5. **Start chatting.** Click the RedClip AI icon in the Activity Bar, or the status bar button, and paste a tutorial link or describe what you want built.
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
+---
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
+## Features
 
-## For more information
+### YouTube tutorial → code
 
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
+Paste a tutorial link. RedClip AI watches the video, tracks what's typed across every file shown on screen, and reconstructs the final code. Longer videos are chunked and merged automatically, so length isn't a limit.
 
-**Enjoy!**
+### A real coding agent
+
+Beyond video extraction, RedClip AI can:
+
+- Read files and list your project's structure
+- Write new files or edit existing ones (with your approval — see below)
+- Run Python files and report the output
+- Inspect an entire project in a single call, so it doesn't need to ask you file-by-file
+
+### Explicit write approvals
+
+Before anything is written to your disk, the exact code is presented in the chat for you to Approve or Reject. If you reject it, the code remains in the chat for you to copy manually. What you see is exactly what gets written.
+
+### Opt-in code execution
+
+Running code is disabled by default. Enabling execution is a one-time, explicit choice per workspace. See the Security section below before enabling this feature.
+
+### Native sidebar integration
+
+There are no separate windows to manage. The agent lives in a native VS Code chat panel right next to your editor, with a quick-access shortcut in the status bar.
+
+---
+
+## Security
+
+- **Execution is opt-in:** Code execution is off by default and must be explicitly enabled per workspace. Trusting one project does not automatically trust another.
+- **No sandbox:** Code you approve to run executes with your full user permissions, exactly as if you ran it yourself in a terminal.
+- **Approval gates:** Files are only written to disk after you explicitly approve them in the chat.
+- **Secret blocking:** The agent will refuse to read files that commonly hold secrets (like `.env`, `.pem`/`.key` files, SSH keys, and cloud credentials).
+- **Key storage:** Your Gemini API key is stored securely in VS Code's built-in SecretStorage and is never written to disk in plain text.
+
+Always review code before enabling execution, especially if it was reconstructed from a third-party video you don't control.
+
+---
+
+## Requirements
+
+- [`uv`](https://docs.astral.sh/uv/) installed and on your PATH
+- A Gemini API key ([free tier available](https://aistudio.google.com/apikey))
+- An open workspace folder
+
+---
+
+## Bring your own key
+
+RedClip AI is bring-your-own-API-key; nothing is billed through the extension itself. Google's free tier is generous but has daily limits; if you hit one, RedClip AI tells you when it resets instead of failing silently.
+
+---
+
+## Known limitations
+
+- Most thoroughly tested on Linux/WSL, and tested moderately on Windows but not tested on macOS. Please [open an issue](https://github.com/ytew06-alt/Youtube-AI-Agent/issues) if something behaves differently on your platform.
+- Very long videos take proportionally longer to process, since each chunk is a separate request.
+
+---
+
+## Feedback
+
+Found a bug or have a feature request? [Open an issue](https://github.com/ytew06-alt/Youtube-AI-Agent/issues).

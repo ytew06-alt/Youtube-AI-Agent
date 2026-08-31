@@ -1,0 +1,55 @@
+[
+    {
+        "parts": [
+            {
+                "media_resolution": null,
+                "code_execution_result": null,
+                "executable_code": null,
+                "file_data": null,
+                "function_call": null,
+                "function_response": null,
+                "inline_data": null,
+                "text": "write it",
+                "thought": null,
+                "thought_signature": null,
+                "video_metadata": null,
+                "tool_call": null,
+                "tool_response": null,
+                "part_metadata": null,
+                "audio_transcription": null
+            }
+        ],
+        "role": "user"
+    },
+    {
+        "parts": [
+            {
+                "media_resolution": null,
+                "code_execution_result": null,
+                "executable_code": null,
+                "file_data": null,
+                "function_call": null,
+                "function_response": {
+                    "will_continue": null,
+                    "scheduling": null,
+                    "parts": null,
+                    "id": null,
+                    "name": "write_file",
+                    "response": {
+                        "result": "The user declined the write to \"x.py\". The code has already been shown to them in the chat. Do NOT attempt to write this file again and do NOT ask what they would prefer. Acknowledge briefly and continue with the rest of the task, or stop if nothing remains."
+                    }
+                },
+                "inline_data": null,
+                "text": null,
+                "thought": null,
+                "thought_signature": null,
+                "video_metadata": null,
+                "tool_call": null,
+                "tool_response": null,
+                "part_metadata": null,
+                "audio_transcription": null
+            }
+        ],
+        "role": "tool"
+    }
+]

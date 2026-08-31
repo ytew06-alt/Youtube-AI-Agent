@@ -3,8 +3,8 @@ SUMMARY_MODEL    = "gemini-3.1-flash-lite"  # compression, cheap
 VIDEO_MODEL      = "gemini-3.1-flash-lite"  # chunk OCR, many requests
 
 FALLBACK_CHAIN = {
-    "gemini-3.5-flash": ["gemini-3.1-flash-lite"],
-    "gemini-3.1-flash-lite": [],
+    "gemini-3.1-flash-lite": ["gemini-3.1-flash"],
+    "gemini-3.1-flash": ["gemini-3.1-flash-lite"],
 }
 
 MODEL_LIMITS = {
