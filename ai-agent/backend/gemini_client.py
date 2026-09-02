@@ -63,7 +63,7 @@ class RateLimiter:
 
     def _load(self):
         try:
-            with open(self.usage_file) as f:
+            with open(self.usage_file,encoding="utf-8") as f:
                 data = json.load(f)
             if data.get("day") == _pacific_day():
                 return data
@@ -73,7 +73,7 @@ class RateLimiter:
 
     def _save(self):
         try:
-            with open(self.usage_file, "w") as f:
+            with open(self.usage_file, "w",encoding="utf-8") as f:
                 json.dump(self._daily, f)
         except OSError:
             pass

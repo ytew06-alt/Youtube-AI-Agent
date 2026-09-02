@@ -79,7 +79,7 @@ class Cache:
     def save_disk(self,file_name):
         with self.lock:
         #dumps into a JSON file with indent 
-            with open(file_name,"w") as f:
+            with open(file_name,"w",encoding="utf-8") as f:
                 json.dump(self.cache,f,indent=4)
 
 
@@ -88,7 +88,7 @@ class Cache:
             if not os.path.exists(file_name):
                 return
             try:
-                with open(file_name,"r") as f:
+                with open(file_name,"r",encoding="utf-8") as f:
                     data=json.load(f)
                 if isinstance(data,dict):
                     self.cache=data

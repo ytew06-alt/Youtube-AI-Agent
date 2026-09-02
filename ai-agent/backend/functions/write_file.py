@@ -26,7 +26,7 @@ def write_file(working_directory: str, file_path: str, content: str,request_appr
 
     parent_dir=os.path.dirname(abs_file_path)
     os.makedirs(parent_dir,exist_ok=True)
-    with open(abs_file_path,"w") as f:
+    with open(abs_file_path,"w",encoding="utf-8") as f:
         f.write(content)
     
         return f'Successfully wrote to "{file_path}" ({len(content)} characters written)'
