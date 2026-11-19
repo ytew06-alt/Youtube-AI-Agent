@@ -4,7 +4,6 @@
 
 It's also a full coding agent: it can read, write, and run files in your workspace, right from a chat panel in the left sidebar.
 
-![RedClip AI chat panel in the sidebar](media/demo.png)
 
 ---
 
@@ -14,7 +13,6 @@ It's also a full coding agent: it can read, write, and run files in your workspa
 2. **Get a Gemini API key.** Free, from [Google AI Studio](https://aistudio.google.com/apikey).
 3. **Add your key.** `Ctrl+Shift+P` → **AI Agent: Set API Key**.
 
-![Setting the API key via the Command Palette](media/help_commands.png)
 
 4. **Open a project folder.** RedClip AI needs a workspace to read and write files in.
 5. **Start chatting.** Click the RedClip AI icon in the Activity Bar, or the status bar button, and paste a tutorial link or describe what you want built.
